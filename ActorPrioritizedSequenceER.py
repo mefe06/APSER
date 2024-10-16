@@ -29,16 +29,20 @@ class PrioritizedReplayBuffer:
 
     def sample(self, batch_size, beta):
         priorities = np.array(self.priorities, dtype=np.float32) ** self.alpha
-        priorities = priorities[:-1]
+        priorities = priorities[:-1] + 1e-2  # Avoid division by zero
+        self.priorities = self.priorities.clip(0, 1)
         probabilities = priorities / priorities.sum()
-        indices = np.random.choice(len(self.buffer)-1, batch_size, p=probabilities) # Ignore the last transition to avoid error on s'
+        try:
+            indices = np.random.choice(len(self.buffer)-1, batch_size, p=probabilities) # Ignore the last transition to avoid error on s'
+        except:
+            pass
         transitions = [self.buffer[idx] for idx in indices]
         return transitions, indices, probabilities[indices]
 
     def update_priorities(self, indices, priorities):
         for idx, priority in zip(indices, priorities):
             self.priorities[idx] = priority
-            
+
 ### here, if env is settable, we can use it to calculate the next state and reward, and estimate the Q-value better, otherwise, just use estimate from the critic
 def APSER(replay_buffer, agent, bootsrap_steps=1, env=None):
     transitions, indices, probabilities = replay_buffer.sample(batch_size, beta)
@@ -135,7 +139,7 @@ done = True
 actor_losses = []
 for t in range(1, 1200):
     if done:
-        state = env.reset()
+        state, _ = env.reset()
     if t < start_time_steps:
         action = env.action_space.sample()
     else:
