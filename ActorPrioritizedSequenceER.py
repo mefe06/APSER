@@ -8,6 +8,9 @@ from collections import deque
 from models.TD3 import TD3
 import gymnasium as gym
 
+def sigmoid(x):
+    return 1 / (1 + np.exp(-x))
+
 # Soft update for target network
 def soft_update(target, source, tau):
     for target_param, param in zip(target.parameters(), source.parameters()):
@@ -29,13 +32,9 @@ class PrioritizedReplayBuffer:
 
     def sample(self, batch_size, beta):
         priorities = np.array(self.priorities, dtype=np.float32) ** self.alpha
-        priorities = priorities[:-1] + 1e-2  # Avoid division by zero
-        self.priorities = self.priorities.clip(0, 1)
+        priorities = priorities[:-1] + 1e-4  # Avoid division by zero
         probabilities = priorities / priorities.sum()
-        try:
-            indices = np.random.choice(len(self.buffer)-1, batch_size, p=probabilities) # Ignore the last transition to avoid error on s'
-        except:
-            pass
+        indices = np.random.choice(len(self.buffer)-1, batch_size, p=probabilities) # Ignore the last transition to avoid error on s'
         transitions = [self.buffer[idx] for idx in indices]
         return transitions, indices, probabilities[indices]
 
@@ -44,7 +43,7 @@ class PrioritizedReplayBuffer:
             self.priorities[idx] = priority
 
 ### here, if env is settable, we can use it to calculate the next state and reward, and estimate the Q-value better, otherwise, just use estimate from the critic
-def APSER(replay_buffer, agent, bootsrap_steps=1, env=None):
+def APSER(replay_buffer, agent, max_steps_before_truncation, bootsrap_steps=1, env=None):
     transitions, indices, probabilities = replay_buffer.sample(batch_size, beta)
 
     states, actions, next_states, rewards, not_dones = zip(*transitions)
@@ -53,7 +52,7 @@ def APSER(replay_buffer, agent, bootsrap_steps=1, env=None):
     next_states = torch.FloatTensor(np.array(next_states))
     rewards = torch.FloatTensor(np.array(rewards)).unsqueeze(1)
     not_dones = torch.FloatTensor(np.array(not_dones)).unsqueeze(1)
-
+### TODO: Parallelize this part, dont use for loop, use vectorized operations for batch
     for i in range(batch_size):
         total_reward = 0  # Accumulate rewards for n steps
         predicted_action = agent.actor(torch.FloatTensor(states[i]).unsqueeze(0)).detach()
@@ -83,16 +82,17 @@ def APSER(replay_buffer, agent, bootsrap_steps=1, env=None):
             current_score_with_current_critic = discounted_reward + agent.critic_target(next_state, agent.actor(next_state))[0].detach().item()    
             replay_buffer.scores[indices[i]] = (discounted_reward, next_state, agent.actor(next_state))
         # Calculate improvement
-        improvement = current_score_with_current_critic - previous_score_with_current_critic
-        priority = np.exp(-improvement)
+        improvement = -(current_score_with_current_critic - previous_score_with_current_critic)
+        priority = sigmoid(improvement)
         replay_buffer.update_priorities([indices[i]], [priority])
         replay_buffer.scores[indices[i]].append(current_score_with_current_critic)
         # Optionally, update nearby transitions' priorities
-        for n_step in range(1, nb_neighbors_to_update + 1):
+        nb_neighbors_to_update = int(priority * (max_steps_before_truncation) ** 0.5)
+        for n_step in range(1, nb_neighbors_to_update//2 + 1):
             if indices[i] - n_step >= 0:
-                replay_buffer.priorities[indices[i] - n_step] *= priority * ro ** n_step
+                replay_buffer.priorities[indices[i] - n_step] += priority * ro ** n_step
             if indices[i] + n_step < len(replay_buffer.priorities):
-                replay_buffer.priorities[indices[i] + n_step] *= priority * ro ** n_step
+                replay_buffer.priorities[indices[i] + n_step] += priority * ro ** n_step
     return states, actions, next_states, rewards, not_dones
 
 # Hyperparameters
@@ -100,6 +100,7 @@ env = gym.make("HalfCheetah-v4")
 state_dim = env.observation_space.shape[0]
 action_dim = env.action_space.shape[0]
 max_action = float(env.action_space.high[0])
+max_steps_before_truncation = env.spec.max_episode_steps
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 buffer_size = 10000
 batch_size = 64
@@ -154,7 +155,7 @@ for t in range(1, 1200):
     # Do not sample from buffer until learning starts
     if t > learning_starts and len(replay_buffer.buffer) > batch_size:
         # Sample from replay buffer
-        states, actions, next_states, rewards, not_dones = APSER(replay_buffer, agent)
+        states, actions, next_states, rewards, not_dones = APSER(replay_buffer, agent, max_steps_before_truncation)
         ### Update networks
         agent.total_it += 1
         with torch.no_grad():
