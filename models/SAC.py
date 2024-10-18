@@ -3,6 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.optim import Adam
 from torch.distributions import Normal
+from utils import soft_update, hard_update, weights_init_
+
 # Implementation of the Soft Actor-Critic algorithm (SAC)
 # Paper: https://arxiv.org/abs/1801.01290
 
@@ -162,24 +164,24 @@ class DeterministicPolicy(nn.Module):
 
 
 class SAC(object):
-    def __init__(self, num_inputs, action_space, args, device):
+    def __init__(self, num_inputs, action_space, gamma, tau, alpha, policy_type, target_update_interval, automatic_entropy_tuning, hidden_size, lr, device):
         # Initialize the training parameters
-        self.gamma = args.gamma
-        self.tau = args.tau
-        self.alpha = args.alpha
+        self.gamma = gamma
+        self.tau = tau
+        self.alpha = alpha
 
         # Initialize the policy-specific parameters
-        self.policy_type = args.policy_type
-        self.target_update_interval = args.target_update_interval
-        self.automatic_entropy_tuning = args.automatic_entropy_tuning
+        self.policy_type = policy_type
+        self.target_update_interval = target_update_interval
+        self.automatic_entropy_tuning = automatic_entropy_tuning
 
         # Set CUDA device
         self.device = device
 
         # Initialize critic networks and optimizer
-        self.critic = Critic(num_inputs, action_space.shape[0], args.hidden_size).to(self.device)
-        self.critic_optimizer = Adam(self.critic.parameters(), lr=args.lr)
-        self.critic_target = Critic(num_inputs, action_space.shape[0], args.hidden_size).to(self.device)
+        self.critic = Critic(num_inputs, action_space.shape[0], hidden_size).to(self.device)
+        self.critic_optimizer = Adam(self.critic.parameters(), lr=lr)
+        self.critic_target = Critic(num_inputs, action_space.shape[0], hidden_size).to(self.device)
         hard_update(self.critic_target, self.critic)
 
         # Initialize actor network and optimizer
@@ -187,15 +189,15 @@ class SAC(object):
             if self.automatic_entropy_tuning is True:
                 self.target_entropy = -torch.prod(torch.Tensor(action_space.shape).to(self.device)).item()
                 self.log_alpha = torch.zeros(1, requires_grad=True, device=self.device)
-                self.alpha_optim = Adam([self.log_alpha], lr=args.lr)
+                self.alpha_optim = Adam([self.log_alpha], lr=lr)
 
-            self.actor = GaussianPolicy(num_inputs, action_space.shape[0], args.hidden_size, action_space).to(self.device)
-            self.actor_optimizer = Adam(self.actor.parameters(), lr=args.lr)
+            self.actor = GaussianPolicy(num_inputs, action_space.shape[0], hidden_size, action_space).to(self.device)
+            self.actor_optimizer = Adam(self.actor.parameters(), lr=lr)
         else:
             self.alpha = 0
             self.automatic_entropy_tuning = False
-            self.actor = DeterministicPolicy(num_inputs, action_space.shape[0], args.hidden_size, action_space).to(self.device)
-            self.actor_optimizer = Adam(self.actor.parameters(), lr=args.lr)
+            self.actor = DeterministicPolicy(num_inputs, action_space.shape[0], hidden_size, action_space).to(self.device)
+            self.actor_optimizer = Adam(self.actor.parameters(), lr=lr)
 
     def select_action(self, state, evaluate=False):
         state = torch.FloatTensor(state).to(self.device).unsqueeze(0)
