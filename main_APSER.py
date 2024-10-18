@@ -7,26 +7,29 @@ import random
 from collections import deque
 from models.TD3 import TD3
 from models.APSER import APSER, PrioritizedReplayBuffer
-from utils import soft_update
+from utils import soft_update, evaluate_policy
 import gymnasium as gym
 
 # Hyperparameters
-env = gym.make("LunarLander-v3", continuous=True)
+env_name = "LunarLander-v3"
+env = gym.make(env_name, continuous=True)
 state_dim = env.observation_space.shape[0]
 action_dim = env.action_space.shape[0]
 max_action = float(env.action_space.high[0])
 max_steps_before_truncation = env.spec.max_episode_steps
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-buffer_size = 10000
-batch_size = 64
-max_steps = 10000
+buffer_size = int(1e5)
+batch_size = 256
+eval_freq = int(5e3)
+max_steps = int(1.5e5)
 discount = 0.99
 tau = 0.005  # Soft update parameter
 ro = 0.9  # Decay factor for updating nearby transitions
 alpha = 0.6  # Prioritization exponent
 beta = 0.4  # Importance sampling exponent
-learning_starts = 1000  # Start learning after 1000 timesteps
-nb_neighbors_to_update = 5  # Number of neighbors to update when a transition is updated
+learning_starts = 2000  # Start learning after 1000 timesteps
+start_time_steps = 1000
+#nb_neighbors_to_update = 5  # Number of neighbors to update when a transition is updated
 policy_noise = 0.2  # Noise added to target policy during critic update
 noise_clip = 0.5  # Range to clip target policy noise
 policy_freq = 2  # Delayed policy updates
@@ -46,11 +49,11 @@ kwargs = {
 # Initialize replay buffer and other variables
 replay_buffer = PrioritizedReplayBuffer(buffer_size, alpha)
 previous_scores = deque(maxlen=buffer_size)
-
+evaluations = []
+file_name = "LL_exp_1"
 # Loss function for critic
 mse_loss = nn.MSELoss()
 agent = TD3(**kwargs)
-start_time_steps = 100
 # Simulated environment interaction
 done = True
 actor_losses = []
@@ -110,4 +113,7 @@ for t in range(1, max_steps):
             soft_update(agent.actor_target, agent.actor, tau)
             soft_update(agent.critic_target, agent.critic, tau)
 
-print(actor_losses)
+        # Evaluate the agent over a number of episodes
+        if (t + 1) % eval_freq == 0:
+            evaluations.append(evaluate_policy(agent, env_name))
+            np.save(f"results/{file_name}_{t}", evaluations)
