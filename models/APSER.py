@@ -33,7 +33,7 @@ class PrioritizedReplayBuffer:
         for idx, priority in zip(indices, priorities):
             self.priorities[idx] = priority
 
-def APSER(replay_buffer: PrioritizedReplayBuffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation: int, bootstrap_steps=1, env=None):
+def APSER(replay_buffer: PrioritizedReplayBuffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation: int, bootstrap_steps=1, env=None, update_neigbors= True):
     transitions, indices, probabilities = replay_buffer.sample(batch_size, beta)
 
     states, actions, next_states, rewards, not_dones = zip(*transitions)
@@ -75,15 +75,53 @@ def APSER(replay_buffer: PrioritizedReplayBuffer, agent, batch_size, beta, disco
 
     # Update priorities in replay buffer in batch
     replay_buffer.update_priorities(indices, priorities)
-
-    # Update scores and priorities of neighboring transitions
-    nb_neighbors_to_update = (priorities * max_steps_before_truncation ** 0.5).astype(int)
-    for i, nb_neighbors in enumerate(nb_neighbors_to_update):
-        neighbors_range = range(1, nb_neighbors // 2 + 1)
-        for n_step in neighbors_range:
-            if indices[i] - n_step >= 0:
-                replay_buffer.priorities[indices[i] - n_step] += priorities[i] * ro ** n_step
-            if indices[i] + n_step < len(replay_buffer.priorities):
-                replay_buffer.priorities[indices[i] + n_step] += priorities[i] * ro ** n_step
+    if update_neigbors:
+        # Update scores and priorities of neighboring transitions
+        root = 1 # 0.5
+        nb_neighbors_to_update = (priorities * max_steps_before_truncation ** root).astype(int)
+        for i, nb_neighbors in enumerate(nb_neighbors_to_update):
+            neighbors_range = range(1, nb_neighbors // 2 + 1)
+            for n_step in neighbors_range:
+                if indices[i] - n_step >= 0:
+                    replay_buffer.priorities[indices[i] - n_step] += priorities[i] * ro ** n_step
+                if indices[i] + n_step < len(replay_buffer.priorities):
+                    replay_buffer.priorities[indices[i] + n_step] += priorities[i] * ro ** n_step
     
     return states, actions, next_states, rewards, not_dones
+
+class ExperienceReplayBuffer(object):
+    def __init__(self, state_dim, action_dim, max_size=int(1e6), device=None):
+        self.device = device
+
+        self.max_size = max_size
+        self.ptr = 0
+        self.size = 0
+
+        self.state = np.zeros((max_size, state_dim))
+        self.action = np.zeros((max_size, action_dim))
+        self.next_state = np.zeros((max_size, state_dim))
+        self.reward = np.zeros((max_size, 1))
+        self.not_done = np.zeros((max_size, 1))
+
+        self.device = device
+
+    def add(self, state, action, next_state, reward, done):
+        self.state[self.ptr] = state
+        self.action[self.ptr] = action
+        self.next_state[self.ptr] = next_state
+        self.reward[self.ptr] = reward
+        self.not_done[self.ptr] = 1. - done
+
+        self.ptr = (self.ptr + 1) % self.max_size
+        self.size = min(self.size + 1, self.max_size)
+
+    def sample(self, batch_size):
+        ind = np.random.randint(self.size, size=batch_size)
+
+        return (
+            torch.FloatTensor(self.state[ind]).to(self.device),
+            torch.FloatTensor(self.action[ind]).to(self.device),
+            torch.FloatTensor(self.next_state[ind]).to(self.device),
+            torch.FloatTensor(self.reward[ind]).to(self.device),
+            torch.FloatTensor(self.not_done[ind]).to(self.device)
+        )

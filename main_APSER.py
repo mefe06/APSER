@@ -6,7 +6,7 @@ import numpy as np
 import random
 from collections import deque
 from models.TD3 import TD3
-from models.APSER import APSER, PrioritizedReplayBuffer
+from models.APSER import APSER, PrioritizedReplayBuffer, ExperienceReplayBuffer
 from utils import soft_update, evaluate_policy
 import gymnasium as gym
 
@@ -17,11 +17,11 @@ state_dim = env.observation_space.shape[0]
 action_dim = env.action_space.shape[0]
 max_action = float(env.action_space.high[0])
 max_steps_before_truncation = env.spec.max_episode_steps
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:0" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu"))
 buffer_size = int(1e5)
 batch_size = 256
 eval_freq = int(5e3)
-max_steps = int(1.5e5)
+max_steps = int(5e5)
 discount = 0.99
 tau = 0.005  # Soft update parameter
 ro = 0.9  # Decay factor for updating nearby transitions
@@ -29,7 +29,6 @@ alpha = 0.6  # Prioritization exponent
 beta = 0.4  # Importance sampling exponent
 learning_starts = 2000  # Start learning after 1000 timesteps
 start_time_steps = 1000
-#nb_neighbors_to_update = 5  # Number of neighbors to update when a transition is updated
 policy_noise = 0.2  # Noise added to target policy during critic update
 noise_clip = 0.5  # Range to clip target policy noise
 policy_freq = 2  # Delayed policy updates
@@ -45,9 +44,12 @@ kwargs = {
     "policy_freq": policy_freq,
     "device": device
 }
-
+use_APSER = False
 # Initialize replay buffer and other variables
-replay_buffer = PrioritizedReplayBuffer(buffer_size, alpha)
+if use_APSER:
+    replay_buffer = PrioritizedReplayBuffer(buffer_size, alpha)
+else:
+    replay_buffer = ExperienceReplayBuffer(state_dim, action_dim, buffer_size, device)
 previous_scores = deque(maxlen=buffer_size)
 evaluations = []
 file_name = "LL_exp_1"
@@ -68,13 +70,19 @@ for t in range(1, max_steps):
     # Store transition in buffer
     transition = [state, action, next_state, reward, done]
     initial_score = [0]  # Initial score for new transitions
-    replay_buffer.add(transition, initial_score)
+    if use_APSER:
+        replay_buffer.add(transition, initial_score)
+    else:
+        replay_buffer.add(*transition) 
     previous_scores.append(initial_score)
     state = next_state
     # Do not sample from buffer until learning starts
-    if t > learning_starts and len(replay_buffer.buffer) > batch_size:
+    if t > learning_starts:# and len(replay_buffer.buffer) > batch_size:
         # Sample from replay buffer
-        states, actions, next_states, rewards, not_dones = APSER(replay_buffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation)
+        if use_APSER:
+            states, actions, next_states, rewards, not_dones = APSER(replay_buffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation, update_neigbors=True)
+        else:
+            states, actions, next_states, rewards, not_dones = replay_buffer.sample(batch_size)
         ### Update networks
         agent.total_it += 1
         with torch.no_grad():
@@ -109,9 +117,12 @@ for t in range(1, max_steps):
             actor_loss.backward()
             agent.actor_optimizer.step()
 
-            # Update target networks using soft update
-            soft_update(agent.actor_target, agent.actor, tau)
-            soft_update(agent.critic_target, agent.critic, tau)
+            # Soft update the target networks
+            for param, target_param in zip(agent.critic.parameters(), agent.critic_target.parameters()):
+                target_param.data.copy_(agent.tau * param.data + (1 - agent.tau) * target_param.data)
+
+            for param, target_param in zip(agent.actor.parameters(), agent.actor_target.parameters()):
+                target_param.data.copy_(agent.tau * param.data + (1 - agent.tau) * target_param.data)
 
         # Evaluate the agent over a number of episodes
         if (t + 1) % eval_freq == 0:
