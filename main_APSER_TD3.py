@@ -7,7 +7,7 @@ import random
 from collections import deque
 from models.TD3 import TD3
 from models.APSER import APSER, PrioritizedReplayBuffer, ExperienceReplayBuffer
-from model.utils import soft_update
+from models.utils import soft_update
 from utils import evaluate_policy
 import gymnasium as gym
 
