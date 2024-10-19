@@ -7,11 +7,12 @@ import random
 from collections import deque
 from models.TD3 import TD3
 from models.APSER import APSER, PrioritizedReplayBuffer, ExperienceReplayBuffer
-from utils import soft_update, evaluate_policy
+from model.utils import soft_update
+from utils import evaluate_policy
 import gymnasium as gym
 
 # Hyperparameters
-env_name = "LunarLanderContinuous-v3"
+env_name = "Hopper-v5"
 env = gym.make(env_name) 
 state_dim = env.observation_space.shape[0]
 action_dim = env.action_space.shape[0]
