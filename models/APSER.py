@@ -44,7 +44,7 @@ def APSER(replay_buffer: PrioritizedReplayBuffer, agent, batch_size, beta, disco
     not_dones = torch.FloatTensor(np.array(not_dones)).unsqueeze(1)
     
     # Calculate predicted actions in batch
-    predicted_actions = agent.actor(states).detach()
+    predicted_actions = torch.FloatTensor(agent.select_action(states))
 
     # Extract next actions from the replay buffer
     next_actions = torch.FloatTensor(np.array([replay_buffer.buffer[indices[i]+1][1] for i in range(batch_size)]))

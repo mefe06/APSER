@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.optim import Adam
 from torch.distributions import Normal
-from utils import soft_update, hard_update, weights_init_
+from models.utils import soft_update, hard_update, weights_init_
 
 # Implementation of the Soft Actor-Critic algorithm (SAC)
 # Paper: https://arxiv.org/abs/1801.01290
@@ -60,6 +60,14 @@ class Critic(nn.Module):
 
         return x1, x2
 
+    def Q1(self, state, action):
+        xu = torch.cat([state, action], 1)
+
+        x1 = F.relu(self.linear1(xu))
+        x1 = F.relu(self.linear2(x1))
+        x1 = self.linear3(x1)
+
+        return x1
 
 class GaussianPolicy(nn.Module):
     def __init__(self, num_inputs, num_actions, hidden_dim, action_space=None):

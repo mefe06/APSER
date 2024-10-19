@@ -7,7 +7,8 @@ import random
 from collections import deque
 from models.SAC import SAC
 from models.APSER import APSER, PrioritizedReplayBuffer, ExperienceReplayBuffer
-from utils import soft_update, evaluate_policy
+from models.utils import soft_update
+from utils import evaluate_policy
 import gymnasium as gym
 
 # Hyperparameters
@@ -21,7 +22,7 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else ("mps" if torch
 buffer_size = int(1e6)
 batch_size = 256
 eval_freq = int(5e3)
-max_steps = int(5e5)
+max_steps = int(1e6)
 discount = 0.99
 tau = 0.005  # Soft update parameter
 ro = 0.9  # Decay factor for updating nearby transitions
