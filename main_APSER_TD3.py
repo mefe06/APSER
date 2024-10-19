@@ -54,7 +54,7 @@ else:
     replay_buffer = ExperienceReplayBuffer(state_dim, action_dim, buffer_size, device)
 previous_scores = deque(maxlen=buffer_size)
 evaluations = []
-file_name = "LL_exp_1"
+file_name = f"{env_name}_exp"
 # Loss function for critic
 mse_loss = nn.MSELoss()
 agent = TD3(**kwargs)

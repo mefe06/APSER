@@ -37,17 +37,17 @@ def APSER(replay_buffer: PrioritizedReplayBuffer, agent, batch_size, beta, disco
     transitions, indices, probabilities = replay_buffer.sample(batch_size, beta)
 
     states, actions, next_states, rewards, not_dones = zip(*transitions)
-    states = torch.FloatTensor(np.array(states))
-    actions = torch.FloatTensor(np.array(actions))
-    next_states = torch.FloatTensor(np.array(next_states))
-    rewards = torch.FloatTensor(np.array(rewards)).unsqueeze(1)
-    not_dones = torch.FloatTensor(np.array(not_dones)).unsqueeze(1)
+    states = torch.FloatTensor(np.array(states)).to(agent.device)
+    actions = torch.FloatTensor(np.array(actions)).to(agent.device)
+    next_states = torch.FloatTensor(np.array(next_states)).to(agent.device)
+    rewards = torch.FloatTensor(np.array(rewards)).unsqueeze(1).to(agent.device)
+    not_dones = torch.FloatTensor(np.array(not_dones)).unsqueeze(1).to(agent.device)
     
     # Calculate predicted actions in batch
-    predicted_actions = torch.FloatTensor(agent.select_action(states))
+    predicted_actions = torch.FloatTensor(agent.select_action(states)).to(agent.device)
 
     # Extract next actions from the replay buffer
-    next_actions = torch.FloatTensor(np.array([replay_buffer.buffer[indices[i]+1][1] for i in range(batch_size)]))
+    next_actions = torch.FloatTensor(np.array([replay_buffer.buffer[indices[i]+1][1] for i in range(batch_size)])).to(agent.device)
 
     # For bootstrap steps = 1
     if bootstrap_steps == 1:
@@ -71,7 +71,7 @@ def APSER(replay_buffer: PrioritizedReplayBuffer, agent, batch_size, beta, disco
 
     # Calculate improvement and priority for batch
     improvements = -(current_scores_with_current_critic - previous_scores_with_current_critic)
-    priorities = torch.sigmoid(improvements).T.detach().numpy()[0]
+    priorities = torch.sigmoid(improvements).T.detach().cpu().numpy()[0]
 
     # Update priorities in replay buffer in batch
     replay_buffer.update_priorities(indices, priorities)
