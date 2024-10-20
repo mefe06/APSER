@@ -1,9 +1,7 @@
 import torch
 import torch.nn as nn
-import torch.optim as optim
 import torch.nn.functional as F
 import numpy as np
-import random
 from collections import deque
 from models.SAC import SAC
 from models.APSER import APSER, PrioritizedReplayBuffer, ExperienceReplayBuffer
@@ -55,6 +53,7 @@ kwargs = {
 "device": device
 }
 use_APSER = False
+use_importance_weights = False
 # Initialize replay buffer and other variables
 if use_APSER:
     replay_buffer = PrioritizedReplayBuffer(buffer_size, alpha)
@@ -91,7 +90,8 @@ for t in range(1, max_steps):
     if t > learning_starts:# and len(replay_buffer.buffer) > batch_size:
         # Sample from replay buffer
         if use_APSER:
-            states, actions, next_states, rewards, not_dones = APSER(replay_buffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation, update_neigbors=True)
+            states, actions, next_states, rewards, not_dones, weights = APSER(replay_buffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation, update_neigbors=True)
+            weights = torch.FloatTensor(weights).to(agent.device)
         else:
             states, actions, next_states, rewards, not_dones = replay_buffer.sample(batch_size)
         ### Update networks
@@ -109,8 +109,12 @@ for t in range(1, max_steps):
         qf1, qf2 = agent.critic(states, actions)
 
         # Compute the critic loss
-        qf1_loss = F.mse_loss(qf1, next_q_value)
-        qf2_loss = F.mse_loss(qf2, next_q_value)
+        if use_importance_weights&use_APSER:
+            qf1_loss = torch.mean(weights * F.mse_loss(qf1, next_q_value, reduction='none'))
+            qf2_loss = torch.mean(weights * F.mse_loss(qf2, next_q_value, reduction='none'))
+        else: 
+            qf1_loss = F.mse_loss(qf1, next_q_value)
+            qf2_loss = F.mse_loss(qf2, next_q_value)
         qf_loss = qf1_loss + qf2_loss
 
         # Optimize the critic
@@ -133,7 +137,10 @@ for t in range(1, max_steps):
 
         # Tune the temperature coefficient
         if agent.automatic_entropy_tuning:
-            alpha_loss = -(agent.log_alpha * (log_pi + agent.target_entropy).detach()).mean()
+            if use_importance_weights&use_APSER:
+                alpha_loss = -(agent.log_alpha * (log_pi + agent.target_entropy).detach() * weights).mean()
+            else:
+                alpha_loss = -(agent.log_alpha * (log_pi + agent.target_entropy).detach()).mean()
 
             agent.alpha_optim.zero_grad()
             alpha_loss.backward()

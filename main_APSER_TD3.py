@@ -1,13 +1,10 @@
 import torch
 import torch.nn as nn
-import torch.optim as optim
 import torch.nn.functional as F
 import numpy as np
-import random
 from collections import deque
 from models.TD3 import TD3
 from models.APSER import APSER, PrioritizedReplayBuffer, ExperienceReplayBuffer
-from models.utils import soft_update
 from utils import evaluate_policy
 import gymnasium as gym
 
@@ -46,6 +43,7 @@ kwargs = {
     "device": device
 }
 use_APSER = False
+use_importance_weights = False
 agent_type = "TD3"
 # Initialize replay buffer and other variables
 if use_APSER:
@@ -82,7 +80,8 @@ for t in range(1, max_steps):
     if t > learning_starts:# and len(replay_buffer.buffer) > batch_size:
         # Sample from replay buffer
         if use_APSER:
-            states, actions, next_states, rewards, not_dones = APSER(replay_buffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation, update_neigbors=True)
+            states, actions, next_states, rewards, not_dones, weights = APSER(replay_buffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation, update_neigbors=True)
+            weights = torch.FloatTensor(weights).to(agent.device)
         else:
             states, actions, next_states, rewards, not_dones = replay_buffer.sample(batch_size)
         ### Update networks
@@ -101,7 +100,10 @@ for t in range(1, max_steps):
         current_Q1, current_Q2 = agent.critic(states, actions)
 
         # Compute the critic loss
-        critic_loss = F.mse_loss(current_Q1, target_Q) + F.mse_loss(current_Q2, target_Q)
+        if use_importance_weights&use_APSER:
+            critic_loss = (weights*F.mse_loss(current_Q1, target_Q, reduction='none')).mean() + (weights*F.mse_loss(current_Q2, target_Q, reduction='none')).mean()
+        else:
+            critic_loss = F.mse_loss(current_Q1, target_Q) + F.mse_loss(current_Q2, target_Q)
 
         # Optimize the critic
         agent.critic_optimizer.zero_grad()
@@ -112,7 +114,10 @@ for t in range(1, max_steps):
         if agent.total_it % agent.policy_freq == 0:
 
             # Compute the actor loss
-            actor_loss = -agent.critic.Q1(states, agent.actor(states)).mean()
+            if use_importance_weights&use_APSER:
+                actor_loss = -(weights*agent.critic.Q1(states, agent.actor(states))).mean()
+            else:
+                actor_loss = -agent.critic.Q1(states, agent.actor(states)).mean()
             actor_losses.append(actor_loss.item())
             # Optimize the actor
             agent.actor_optimizer.zero_grad()

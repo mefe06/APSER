@@ -100,8 +100,7 @@ class TD3(object):
         self.total_it = 0
 
     def select_action(self, state):
-        state = torch.FloatTensor(state.reshape(1, -1)).to(self.device)
-
+        state = torch.as_tensor(state, dtype=torch.float32).to(self.device)
         return self.actor(state).cpu().data.numpy().flatten()
 
     def update_parameters(self, replay_buffer, batch_size=256):

@@ -1,11 +1,6 @@
 import torch
-import torch.nn as nn
-import torch.optim as optim
-import torch.nn.functional as F
 import numpy as np
-import random
 from collections import deque
-import gymnasium as gym
 
 # Replay Buffer with Prioritization
 class PrioritizedReplayBuffer:
@@ -27,14 +22,16 @@ class PrioritizedReplayBuffer:
         probabilities = priorities / priorities.sum()
         indices = np.random.choice(len(self.buffer)-1, batch_size, p=probabilities) # Ignore the last transition to avoid error on s'
         transitions = [self.buffer[idx] for idx in indices]
-        return transitions, indices, probabilities[indices]
+        weights = (len(self.buffer) * probabilities) ** (-beta)
+        weights /= weights.max()  # Normalize IS weights
+        return transitions, indices, probabilities[indices], weights[indices]
 
     def update_priorities(self, indices: list[int], priorities:list[float]):
         for idx, priority in zip(indices, priorities):
             self.priorities[idx] = priority
 
 def APSER(replay_buffer: PrioritizedReplayBuffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation: int, bootstrap_steps=1, env=None, update_neigbors= True):
-    transitions, indices, probabilities = replay_buffer.sample(batch_size, beta)
+    transitions, indices, probabilities, weights = replay_buffer.sample(batch_size, beta)
 
     states, actions, next_states, rewards, not_dones = zip(*transitions)
     states = torch.FloatTensor(np.array(states)).to(agent.device)
@@ -44,7 +41,7 @@ def APSER(replay_buffer: PrioritizedReplayBuffer, agent, batch_size, beta, disco
     not_dones = torch.FloatTensor(np.array(not_dones)).unsqueeze(1).to(agent.device)
     
     # Calculate predicted actions in batch
-    predicted_actions = torch.FloatTensor(agent.select_action(states)).to(agent.device)
+    predicted_actions = torch.FloatTensor(agent.select_action(states)).to(agent.device).reshape(states.shape[0], -1)
 
     # Extract next actions from the replay buffer
     next_actions = torch.FloatTensor(np.array([replay_buffer.buffer[indices[i]+1][1] for i in range(batch_size)])).to(agent.device)
@@ -87,7 +84,7 @@ def APSER(replay_buffer: PrioritizedReplayBuffer, agent, batch_size, beta, disco
                 if indices[i] + n_step < len(replay_buffer.priorities):
                     replay_buffer.priorities[indices[i] + n_step] += priorities[i] * ro ** n_step
     
-    return states, actions, next_states, rewards, not_dones
+    return states, actions, next_states, rewards, not_dones, weights
 
 class ExperienceReplayBuffer(object):
     def __init__(self, state_dim, action_dim, max_size=int(1e6), device=None):
