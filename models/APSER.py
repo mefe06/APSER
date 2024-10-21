@@ -9,20 +9,30 @@ class PrioritizedReplayBuffer:
         self.priorities = deque(maxlen=buffer_size)
         self.scores = deque(maxlen=buffer_size)  # Storing scores as (sum of rewards, Q-value)
         self.alpha = alpha
+        self.size = 0
+        self.max_size = buffer_size
+        self.td_errors = deque(maxlen=buffer_size)
 
-    def add(self, transition, score):
+    def add(self, transition, score, td=None):
         self.buffer.append(transition)
         max_priority = max(self.priorities, default=1.0)
         self.priorities.append(max_priority)
         self.scores.append(score)
+        self.size = min(self.size + 1, self.max_size)
+        if td is not None:
+            self.td_errors.append(td)
 
-    def sample(self, batch_size, beta):
-        priorities = np.array(self.priorities, dtype=np.float32) ** self.alpha
-        priorities = priorities[:-1] + 1e-4  # Avoid division by zero
-        probabilities = priorities / priorities.sum()
-        indices = np.random.choice(len(self.buffer)-1, batch_size, p=probabilities) # Ignore the last transition to avoid error on s'
+    def sample(self, batch_size, beta, sample_uniform=False):
+        if sample_uniform:
+            indices = np.random.choice(self.size-1, batch_size, replace=False)
+            probabilities = np.ones(self.size-1) / (self.size-1)
+        else:
+            priorities = np.array(self.priorities, dtype=np.float32) ** self.alpha
+            priorities = priorities[:-1] + 1e-4  # Avoid division by zero
+            probabilities = priorities / priorities.sum()
+            indices = np.random.choice(self.size-1, batch_size, p=probabilities) # Ignore the last transition to avoid error on s'
         transitions = [self.buffer[idx] for idx in indices]
-        weights = (len(self.buffer) * probabilities) ** (-beta)
+        weights = ((self.size-1) * probabilities) ** (-beta)
         weights /= weights.max()  # Normalize IS weights
         return transitions, indices, probabilities[indices], weights[indices]
 
@@ -30,8 +40,8 @@ class PrioritizedReplayBuffer:
         for idx, priority in zip(indices, priorities):
             self.priorities[idx] = priority
 
-def APSER(replay_buffer: PrioritizedReplayBuffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation: int, bootstrap_steps=1, env=None, update_neigbors= True):
-    transitions, indices, probabilities, weights = replay_buffer.sample(batch_size, beta)
+def APSER(replay_buffer: PrioritizedReplayBuffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation: int, bootstrap_steps=1, env=None, update_neigbors= True, uniform_sampling=False):
+    transitions, indices, probabilities, weights = replay_buffer.sample(batch_size, beta, sample_uniform=uniform_sampling)
 
     states, actions, next_states, rewards, not_dones = zip(*transitions)
     states = torch.FloatTensor(np.array(states)).to(agent.device)

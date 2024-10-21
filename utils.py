@@ -1,5 +1,6 @@
 import gymnasium as gym
 import numpy as np
+import os 
 
 def evaluate_policy(agent, env_name, eval_episodes=10, show_evals = False):
     eval_env = gym.make(env_name)
@@ -24,3 +25,18 @@ def evaluate_policy(agent, env_name, eval_episodes=10, show_evals = False):
     print("---------------------------------------")
 
     return avg_reward
+
+def save_with_unique_filename(array, base_filename):
+    # Split the base filename and extension
+    filename, extension = os.path.splitext(base_filename)
+    
+    # Initialize a counter
+    counter = 1
+    # Check if the file exists
+    while os.path.exists(base_filename):
+        # If it exists, modify the filename by appending the counter
+        base_filename = f"{filename}{counter}{extension}"
+        counter += 1
+    
+    # Save the array using np.save
+    np.save(base_filename, array)

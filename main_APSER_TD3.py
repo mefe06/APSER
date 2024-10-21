@@ -5,7 +5,7 @@ import numpy as np
 from collections import deque
 from models.TD3 import TD3
 from models.APSER import APSER, PrioritizedReplayBuffer, ExperienceReplayBuffer
-from utils import evaluate_policy
+from utils import evaluate_policy, save_with_unique_filename
 import gymnasium as gym
 
 # Hyperparameters
@@ -16,17 +16,18 @@ action_dim = env.action_space.shape[0]
 max_action = float(env.action_space.high[0])
 max_steps_before_truncation = env.spec.max_episode_steps
 device = torch.device("cuda:0" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu"))
-buffer_size = int(1e6)
+buffer_size = int(2000)
 batch_size = 256
-eval_freq = int(5e3)
-max_steps = int(1e6)
+eval_freq = int(250)
+max_steps = int(2000)
 discount = 0.99
 tau = 0.005  # Soft update parameter
 ro = 0.9  # Decay factor for updating nearby transitions
 alpha = 0.6  # Prioritization exponent
 beta = 0.4  # Importance sampling exponent
-learning_starts = 2000  # Start learning after 1000 timesteps
-start_time_steps = 1000
+learning_starts = 500  # Start learning after 1000 timesteps
+start_time_steps = 500
+uniform_sampling_period = 500
 policy_noise = 0.2  # Noise added to target policy during critic update
 noise_clip = 0.5  # Range to clip target policy noise
 policy_freq = 2  # Delayed policy updates
@@ -42,8 +43,8 @@ kwargs = {
     "policy_freq": policy_freq,
     "device": device
 }
-use_APSER = False
-use_importance_weights = False
+use_APSER = True
+use_importance_weights = True
 agent_type = "TD3"
 # Initialize replay buffer and other variables
 if use_APSER:
@@ -69,9 +70,12 @@ for t in range(1, max_steps):
     next_state, reward, done, _, _ = env.step(action)
     # Store transition in buffer
     transition = [state, action, next_state, reward, done]
+    td_error = agent.critic.Q1(torch.FloatTensor(np.array(state)).to(agent.device).unsqueeze(0), torch.FloatTensor(np.array(action)).to(agent.device).unsqueeze(0))  - \
+    discount * (reward + agent.critic.Q1(torch.FloatTensor(np.array(next_state)).to(agent.device).unsqueeze(0), 
+                                         torch.FloatTensor(agent.select_action(torch.FloatTensor(np.array(next_state)).to(agent.device).unsqueeze(0))).to(agent.device).unsqueeze(0)))
     initial_score = [0]  # Initial score for new transitions
     if use_APSER:
-        replay_buffer.add(transition, initial_score)
+        replay_buffer.add(transition, initial_score, td_error.detach().cpu().numpy())
     else:
         replay_buffer.add(*transition) 
     previous_scores.append(initial_score)
@@ -80,7 +84,10 @@ for t in range(1, max_steps):
     if t > learning_starts:# and len(replay_buffer.buffer) > batch_size:
         # Sample from replay buffer
         if use_APSER:
-            states, actions, next_states, rewards, not_dones, weights = APSER(replay_buffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation, update_neigbors=True)
+            if t< learning_starts + uniform_sampling_period:
+                states, actions, next_states, rewards, not_dones, weights = APSER(replay_buffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation, update_neigbors=True, uniform_sampling=True)
+            else:
+                states, actions, next_states, rewards, not_dones, weights = APSER(replay_buffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation, update_neigbors=True)
             weights = torch.FloatTensor(weights).to(agent.device)
         else:
             states, actions, next_states, rewards, not_dones = replay_buffer.sample(batch_size)
@@ -134,4 +141,12 @@ for t in range(1, max_steps):
         # Evaluate the agent over a number of episodes
         if (t + 1) % eval_freq == 0:
             evaluations.append(evaluate_policy(agent, env_name))
-            np.save(f"results/TD3_{file_name}_{t}", evaluations)
+            save_with_unique_filename(evaluations, f"results/{file_name}_{t}")
+            rewards = np.array([transition[3] for transition in replay_buffer.buffer])
+            save_with_unique_filename(rewards, f"results/{env_name}_rewards_{t}")
+            priorities = np.array([priority for priority in replay_buffer.priorities])
+            save_with_unique_filename(priorities, f"results/{env_name}_priorities_{t}")
+            td_errors = np.array([td_error for td_error in replay_buffer.td_errors])
+            save_with_unique_filename(td_errors, f"results/{env_name}_td_errors_{t}")
+            save_with_unique_filename(actor_losses, f"results/{env_name}_actor_losses_{t}")
+
