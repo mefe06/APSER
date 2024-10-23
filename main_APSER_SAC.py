@@ -14,15 +14,15 @@ def parse_args():
     
     # Environment
     parser.add_argument('--env_name', type=str, default="Ant-v5", help='Gymnasium environment name')
-    parser.add_argument('--max_steps', type=int, default=250000, help='Maximum number of training steps')
-    parser.add_argument('--eval_freq', type=int, default=2500, help='How often to evaluate the policy')
+    parser.add_argument('--max_steps', type=int, default=2500, help='Maximum number of training steps')
+    parser.add_argument('--eval_freq', type=int, default=250, help='How often to evaluate the policy')
     parser.add_argument('--file_name', type=str, default="TD3", help='Name of the file to save results')
     parser.add_argument('--seed', type=int, default=0, help='Random seed')
     # Buffer and batch settings
-    parser.add_argument('--buffer_size', type=int, default=250000, help='Size of the replay buffer')
+    parser.add_argument('--buffer_size', type=int, default=2500, help='Size of the replay buffer')
     parser.add_argument('--batch_size', type=int, default=256, help='Batch size for training')
-    parser.add_argument('--learning_starts', type=int, default=25000, help='Steps before starting learning')
-    parser.add_argument('--start_time_steps', type=int, default=25000, help='Initial random action steps')
+    parser.add_argument('--learning_starts', type=int, default=500, help='Steps before starting learning')
+    parser.add_argument('--start_time_steps', type=int, default=500, help='Initial random action steps')
     
     # Algorithm parameters
     parser.add_argument('--discount', type=float, default=0.99, help='Discount factor')
@@ -47,20 +47,25 @@ def parse_args():
     parser.add_argument('--target_update_interval', type=int, default=1, help='Target network update interval')
     parser.add_argument('--automatic_entropy_tuning', type=bool, default=True, help='Automatic entropy tuning')
 
-    parser.add_argument('--use_APSER', action='store_true', help='Use APSER (default: True)')
-    parser.add_argument('--no_APSER', action='store_true', help='Disable APSER')
-    parser.add_argument('--use_importance_weights', action='store_true', help='Use importance weights (default: True)')
-    parser.add_argument('--no_importance_weights', action='store_true', help='Disable importance weights')
-    parser.add_argument('--PER', action='store_true', help='Use PER when not using APSER (default: False)')
+    parser.add_argument('--non_linearity', default="sigmoid")
+    parser.add_argument('--use_apser', action='store_true', default=True,
+                       help='Use APSER prioritization')
+    parser.add_argument('--no_apser', action='store_false', dest='use_apser',
+                       help='Disable APSER prioritization')
     
-    # Rest of your arguments...
+    parser.add_argument('--use_importance_weights', action='store_true', default=True,
+                       help='Use importance sampling weights')
+    parser.add_argument('--no_importance_weights', action='store_false', dest='use_importance_weights',
+                       help='Disable importance sampling weights')
     
+    parser.add_argument('--update_neighbors', action='store_true', default=True,
+                       help='Update neighboring transitions')
+    parser.add_argument('--no_update_neighbors', action='store_false', dest='update_neighbors',
+                       help='Disable updating neighboring transitions')
+    
+    parser.add_argument('--per', action='store_true', default=False,
+                       help='Use PER when not using APSER')
     args = parser.parse_args()
-    
-    # Post-process boolean arguments
-    args.use_APSER = not args.no_APSER
-    args.use_importance_weights = not args.no_importance_weights
-    
     return args
 
 def main():
@@ -83,9 +88,9 @@ def main():
     policy_noise = args.policy_noise
     noise_clip = args.noise_clip
     exploration_noise = args.exploration_noise
-    use_APSER = args.use_APSER
+    use_APSER = args.use_apser
     use_importance_weights = args.use_importance_weights
-    PER = args.PER
+    PER = args.per
     uniform_sampling_period = args.uniform_sampling_period
     beta = args.beta
     policy_type = args.policy_type
@@ -93,6 +98,9 @@ def main():
     automatic_entropy_tuning = args.automatic_entropy_tuning
     gamma = discount
     seed = args.seed
+    non_linearity = args.non_linearity
+    update_neigbors = args.update_neighbors
+    start_time_steps =learning_starts
 
     # Hyperparameters
     env = gym.make(env_name)
@@ -167,7 +175,7 @@ def main():
                 if t< learning_starts + uniform_sampling_period:
                     states, actions, next_states, rewards, not_dones, weights = APSER(replay_buffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation, update_neigbors=False, uniform_sampling=True)
                 else:
-                    states, actions, next_states, rewards, not_dones, weights = APSER(replay_buffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation, update_neigbors=False)
+                    states, actions, next_states, rewards, not_dones, weights = APSER(replay_buffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation, non_linearity=non_linearity, update_neigbors = update_neigbors)
                 weights = torch.as_tensor(weights, dtype=torch.float32).to(agent.device)
             else:
                 if PER:
