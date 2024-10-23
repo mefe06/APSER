@@ -15,7 +15,8 @@ def evaluate_policy(agent, env_name, eval_episodes=10, show_evals = False):
             action = agent.select_action(np.array(state))
             if show_evals:
                 eval_env.render()
-            state, reward, done, _, _ = eval_env.step(action)
+            state, reward, terminated, truncated, _ = eval_env.step(action)
+            done = terminated or truncated            
             avg_reward += reward
 
     avg_reward /= eval_episodes
