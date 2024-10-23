@@ -1,98 +1,137 @@
 import torch
 import numpy as np
-from collections import deque
 
-# Replay Buffer with Prioritization
+class SumTree(object):
+    def __init__(self, max_size):
+        self.levels = [np.zeros(1)]
+        # Tree construction
+        # Double the number of nodes at each level
+        level_size = 1
+        while level_size < max_size:
+            level_size *= 2
+            self.levels.append(np.zeros(level_size))
+
+    # Batch binary search through sum tree
+    # Sample a priority between 0 and the max priority and then search the tree for the corresponding index
+    def sample(self, batch_size):
+        value = np.random.uniform(0, self.levels[0][0], size=batch_size)
+        ind = np.zeros(batch_size, dtype=int)
+
+        for nodes in self.levels[1:]:
+            ind *= 2
+            left_sum = nodes[ind]
+
+            is_greater = np.greater(value, left_sum)
+
+            # If value > left_sum -> go right (+1), else go left (+0)
+            ind += is_greater
+
+            # If we go right, we only need to consider the values in the right tree
+            # so we subtract the sum of values in the left tree
+            value -= left_sum * is_greater
+
+        return ind
+
+    def set(self, ind, new_priority):
+        priority_diff = new_priority - self.levels[-1][ind]
+
+        for nodes in self.levels[::-1]:
+            np.add.at(nodes, ind, priority_diff)
+            ind //= 2
+
+    def batch_set(self, ind, new_priority):
+        # Confirm we don't increment a node twice
+        ind, unique_ind = np.unique(ind, return_index=True)
+        priority_diff = new_priority[unique_ind] - self.levels[-1][ind]
+
+        for nodes in self.levels[::-1]:
+            np.add.at(nodes, ind, priority_diff)
+            ind //= 2
+
+
 class PrioritizedReplayBuffer:
-    def __init__(self, buffer_size, alpha):
-        self.buffer = deque(maxlen=buffer_size)
-        self.priorities = deque(maxlen=buffer_size)
-        self.scores = deque(maxlen=buffer_size)  # Storing scores as (sum of rewards, Q-value)
-        self.alpha = alpha
+    def __init__(self, state_dim, action_dim, max_size=int(1e6), device=None):
+        self.max_size = max_size
+        self.ptr = 0
         self.size = 0
-        self.max_size = buffer_size
-        self.td_errors = deque(maxlen=buffer_size)
 
-    def add(self, transition, score, td=None):
-        self.buffer.append(transition)
-        max_priority = max(self.priorities, default=1.0)
-        self.priorities.append(max_priority)
-        self.scores.append(score)
+        self.state = np.zeros((max_size, state_dim))
+        self.action = np.zeros((max_size, action_dim))
+        self.next_state = np.zeros((max_size, state_dim))
+        self.reward = np.zeros((max_size, 1))
+        self.not_done = np.zeros((max_size, 1))
+
+        self.tree = SumTree(max_size)
+        self.max_priority = 1.0
+        self.beta = 0.4
+
+        self.device = device
+
+    def add(self, state, action, next_state, reward, done):
+        self.state[self.ptr] = state
+        self.action[self.ptr] = action
+        self.next_state[self.ptr] = next_state
+        self.reward[self.ptr] = reward
+        self.not_done[self.ptr] = 1. - done
+
+        self.tree.set(self.ptr, self.max_priority)
+
+        self.ptr = (self.ptr + 1) % self.max_size
         self.size = min(self.size + 1, self.max_size)
-        if td is not None:
-            self.td_errors.append(td)
 
-    def sample(self, batch_size, beta, sample_uniform=False):
-        if sample_uniform:
-            indices = np.random.choice(self.size-1, batch_size, replace=False)
-            probabilities = np.ones(self.size-1) / (self.size-1)
-        else:
-            priorities = np.array(self.priorities, dtype=np.float32) ** self.alpha
-            priorities = priorities[:-1] + 1e-4  # Avoid division by zero
-            probabilities = priorities / priorities.sum()
-            indices = np.random.choice(self.size-1, batch_size, p=probabilities) # Ignore the last transition to avoid error on s'
-        transitions = [self.buffer[idx] for idx in indices]
-        weights = ((self.size-1) * probabilities) ** (-beta)
-        weights /= weights.max()  # Normalize IS weights
-        return transitions, indices, probabilities[indices], weights[indices]
+    def sample(self, batch_size):
+        ind = self.tree.sample(batch_size)
 
-    def update_priorities(self, indices: list[int], priorities:list[float]):
-        for idx, priority in zip(indices, priorities):
-            self.priorities[idx] = priority
+        weights = self.tree.levels[-1][ind] ** -self.beta
+        weights /= weights.max()
 
-def APSER(replay_buffer: PrioritizedReplayBuffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation: int, bootstrap_steps=1, env=None, update_neigbors= True, uniform_sampling=False):
-    transitions, indices, probabilities, weights = replay_buffer.sample(batch_size, beta, sample_uniform=uniform_sampling)
+        self.beta = min(self.beta + 2e-7, 1)
 
-    states, actions, next_states, rewards, not_dones = zip(*transitions)
-    states = torch.FloatTensor(np.array(states)).to(agent.device)
-    actions = torch.FloatTensor(np.array(actions)).to(agent.device)
-    next_states = torch.FloatTensor(np.array(next_states)).to(agent.device)
-    rewards = torch.FloatTensor(np.array(rewards)).unsqueeze(1).to(agent.device)
-    not_dones = torch.FloatTensor(np.array(not_dones)).unsqueeze(1).to(agent.device)
-    
-    # Calculate predicted actions in batch
+        return (
+            torch.FloatTensor(self.state[ind]).to(self.device),
+            torch.FloatTensor(self.action[ind]).to(self.device),
+            torch.FloatTensor(self.next_state[ind]).to(self.device),
+            torch.FloatTensor(self.reward[ind]).to(self.device),
+            torch.FloatTensor(self.not_done[ind]).to(self.device),
+            ind,
+            torch.FloatTensor(weights).to(self.device).reshape(-1, 1)
+        )
+
+    def update_priority(self, ind, priority):
+        self.max_priority = max(priority.max(), self.max_priority)
+        self.tree.batch_set(ind, priority)
+
+
+
+def APSER(replay_buffer: PrioritizedReplayBuffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation: int, bootstrap_steps=1, env=None, update_neigbors= False, uniform_sampling=False, normalize = True, non_linearity = "relu"):
+    states, actions, next_states, rewards, not_dones, indices, weights = replay_buffer.sample(batch_size)
     predicted_actions = torch.FloatTensor(agent.select_action(states)).to(agent.device).reshape(states.shape[0], -1)
-
-    # Extract next actions from the replay buffer
-    next_actions = torch.FloatTensor(np.array([replay_buffer.buffer[indices[i]+1][1] for i in range(batch_size)])).to(agent.device)
-
-    # For bootstrap steps = 1
-    if bootstrap_steps == 1:
-        # Vectorized calculation of previous scores
-        previous_scores_with_current_critic = rewards + discount * agent.critic.Q1(next_states, next_actions).detach()
-
-        # Vectorized calculation of current scores
-        current_scores_with_current_critic = agent.critic.Q1(states, predicted_actions).detach()
-    else:
-        # For bootstrap steps > 1, we need to account for multiple steps (truncating after n steps)
-        discounted_rewards = torch.zeros(batch_size, 1)
-        for step in range(bootstrap_steps):
-            predicted_actions = agent.actor(next_states).detach()
-            next_states, rewards, dones, _ = env.step(predicted_actions)
-            discounted_rewards += discount ** step * rewards
-            if dones.any():  # Break if any episodes are done
-                break
-        
-        # Calculate current score with critic for multi-step bootstrapping
-        current_scores_with_current_critic = discounted_rewards + agent.critic_target(next_states, agent.actor(next_states)).detach()
-
+    next_actions = torch.FloatTensor(np.array([replay_buffer.action[indices[i]+1] for i in range(batch_size)])).to(agent.device)
+    previous_scores_with_current_critic = rewards + discount * agent.critic.Q1(next_states, next_actions).detach()
+    current_scores_with_current_critic = agent.critic.Q1(states, predicted_actions).detach()
     # Calculate improvement and priority for batch
-    improvements = -(current_scores_with_current_critic - previous_scores_with_current_critic)
-    priorities = torch.sigmoid(improvements).T.detach().cpu().numpy()[0]
-
+    improvements = (current_scores_with_current_critic - previous_scores_with_current_critic)
+    if normalize: 
+        improvements = (improvements - improvements.mean()) / (improvements.std() + 1e-5)
+    if non_linearity == "relu":
+        priorities = torch.relu(improvements).T.detach().cpu().numpy()[0]  # Alternatively, relu can be used
+        priorities = priorities / (priorities.max() + 1e-5)  # Normalize between 0 and 1
+    else:
+        priorities = torch.sigmoid(improvements).T.detach().cpu().numpy()[0]
     # Update priorities in replay buffer in batch
-    replay_buffer.update_priorities(indices, priorities)
+    replay_buffer.update_priority(indices, priorities)
     if update_neigbors:
         # Update scores and priorities of neighboring transitions
         root = 1 # 0.5
+        #max_priority = max(replay_buffer.priorities)
         nb_neighbors_to_update = (priorities * max_steps_before_truncation ** root).astype(int)
         for i, nb_neighbors in enumerate(nb_neighbors_to_update):
             neighbors_range = range(1, nb_neighbors // 2 + 1)
             for n_step in neighbors_range:
                 if indices[i] - n_step >= 0:
-                    replay_buffer.priorities[indices[i] - n_step] += priorities[i] * ro ** n_step
+                    replay_buffer.update_priority(indices[i] - n_step,  min(replay_buffer.priorities[indices[i] - n_step] + priorities[i] * ro ** n_step, replay_buffer.max_priority))
                 if indices[i] + n_step < len(replay_buffer.priorities):
-                    replay_buffer.priorities[indices[i] + n_step] += priorities[i] * ro ** n_step
+                    replay_buffer.update_priority(indices[i] + n_step,  min(replay_buffer.priorities[indices[i] + n_step] + priorities[i] * ro ** n_step,replay_buffer.max_priority))
     
     return states, actions, next_states, rewards, not_dones, weights
 
