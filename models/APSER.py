@@ -103,21 +103,17 @@ class PrioritizedReplayBuffer:
 
 
 
-def APSER(replay_buffer: PrioritizedReplayBuffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation: int, bootstrap_steps=1, env=None, update_neigbors= False, uniform_sampling=False, normalize = True, non_linearity = "relu"):
+def APSER(replay_buffer: PrioritizedReplayBuffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation: int, bootstrap_steps=1, env=None, update_neigbors= False, uniform_sampling=False, normalize = True):
     states, actions, next_states, rewards, not_dones, indices, weights = replay_buffer.sample(batch_size)
     predicted_actions = torch.FloatTensor(agent.select_action(states)).to(agent.device).reshape(states.shape[0], -1)
     next_actions = torch.FloatTensor(np.array([replay_buffer.action[indices[i]+1] for i in range(batch_size)])).to(agent.device)
-    previous_scores_with_current_critic = rewards + discount * agent.critic.Q1(next_states, next_actions).detach()
+    previous_scores_with_current_critic = rewards + discount * not_dones * agent.critic.Q1(next_states, next_actions).detach()
     current_scores_with_current_critic = agent.critic.Q1(states, predicted_actions).detach()
     # Calculate improvement and priority for batch
     improvements = (current_scores_with_current_critic - previous_scores_with_current_critic)
     if normalize: 
         improvements = (improvements - improvements.mean()) / (improvements.std() + 1e-5)
-    if non_linearity == "relu":
-        priorities = torch.relu(improvements).T.detach().cpu().numpy()[0]  # Alternatively, relu can be used
-        priorities = priorities / (priorities.max() + 1e-5)  # Normalize between 0 and 1
-    else:
-        priorities = torch.sigmoid(improvements).T.detach().cpu().numpy()[0]
+    priorities = torch.sigmoid(improvements).T.detach().cpu().numpy()[0]
     # Update priorities in replay buffer in batch
     replay_buffer.update_priority(indices, priorities)
     # if update_neigbors:
@@ -161,10 +157,7 @@ def APSER(replay_buffer: PrioritizedReplayBuffer, agent, batch_size, beta, disco
             # Vectorized update of neighbors
             current_priorities = replay_buffer.tree.levels[-1][all_neighbors]
             updated_priorities = np.minimum(current_priorities + all_priorities, replay_buffer.max_priority)
-            try:
-                replay_buffer.update_priority(all_neighbors, updated_priorities)
-            except:
-                pass
+            replay_buffer.update_priority(all_neighbors, updated_priorities)
 
     return states, actions, next_states, rewards, not_dones, weights
 

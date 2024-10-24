@@ -40,7 +40,7 @@ def plot_results(env_name, use_apser, agent_name="TD3", number_of_steps=250000):
     )
 
     # Save the plot as HTML
-    output_file = f"{file_suffix.lower()}_{env_name.lower()}_experiments_{str(number_of_steps)}_steps.html"
+    output_file = f"{prefix}_experiments_{str(number_of_steps)}_steps.html"
     fig.write_html(output_file)
     print(f"Plot saved as {output_file}")
 

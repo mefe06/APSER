@@ -14,15 +14,16 @@ def parse_args():
     
     # Environment
     parser.add_argument('--env_name', type=str, default="Ant-v5", help='Gymnasium environment name')
-    parser.add_argument('--max_steps', type=int, default=2500, help='Maximum number of training steps')
-    parser.add_argument('--eval_freq', type=int, default=250, help='How often to evaluate the policy')
-    parser.add_argument('--file_name', type=str, default="TD3", help='Name of the file to save results')
+    parser.add_argument('--max_steps', type=int, default=250000, help='Maximum number of training steps')
+    parser.add_argument('--eval_freq', type=int, default=2500, help='How often to evaluate the policy')
+    parser.add_argument('--file_name', type=str, default="SAC", help='Name of the file to save results')
     parser.add_argument('--seed', type=int, default=0, help='Random seed')
+
     # Buffer and batch settings
-    parser.add_argument('--buffer_size', type=int, default=2500, help='Size of the replay buffer')
+    parser.add_argument('--buffer_size', type=int, default=250000, help='Size of the replay buffer')
     parser.add_argument('--batch_size', type=int, default=256, help='Batch size for training')
-    parser.add_argument('--learning_starts', type=int, default=500, help='Steps before starting learning')
-    parser.add_argument('--start_time_steps', type=int, default=500, help='Initial random action steps')
+    parser.add_argument('--learning_starts', type=int, default=25000, help='Steps before starting learning')
+    parser.add_argument('--start_time_steps', type=int, default=25000, help='Initial random action steps')
     
     # Algorithm parameters
     parser.add_argument('--discount', type=float, default=0.99, help='Discount factor')
@@ -128,7 +129,6 @@ def main():
     }
     td_errors = []
     agent_name = "SAC"
-    print("use_APSER", use_APSER)
     file_suffix = "APSER" if use_APSER else "vanilla"
     file_name = f"{file_suffix}_{agent_name}_{env_name}"
     # Initialize replay buffer and other variables

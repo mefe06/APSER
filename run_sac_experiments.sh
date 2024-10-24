@@ -1,29 +1,30 @@
 # run_sac_experiments.sh
 #!/bin/bash
-CONDA_ENV="RL"
+CONDA_ENV="RL_env"
 
 # Activate the Conda environment
 source ~/anaconda3/etc/profile.d/conda.sh
 conda activate $CONDA_ENV
 # Global parameters
-MAX_STEPS=1000
-BUFFER_SIZE=1000
+MAX_STEPS=250000
+BUFFER_SIZE=250000
 BATCH_SIZE=256
-EVAL_FREQ=250
+EVAL_FREQ=2500
 AGENT_NAME="SAC"
-learning_starts=250
-
+learning_starts=25000
+non_linearity="relu"
 # Environments to test
 ENVIRONMENTS=(
     "Hopper-v5"
     "Walker2d-v5"
     "Ant-v5"
     "HalfCheetah-v5"
+    LunarLanderContinuous-v3
 )
-SEEDS=(1 2 3)
+SEEDS=(0)
 
 # Base command
-BASE_CMD="python main_APSER_SAC.py --max_steps $MAX_STEPS --buffer_size $BUFFER_SIZE --batch_size $BATCH_SIZE --eval_freq $EVAL_FREQ --learning_starts $learning_starts"
+BASE_CMD="python main_APSER_SAC.py --non_linearity $non_linearity  --update_neighbors --max_steps $MAX_STEPS --buffer_size $BUFFER_SIZE --batch_size $BATCH_SIZE --eval_freq $EVAL_FREQ --learning_starts $learning_starts"
 run_experiment() {
     local env=$1
     local use_apser=$2
@@ -34,9 +35,9 @@ run_experiment() {
     echo "APSER: $use_apser"
     
     if [ "$use_apser" = true ]; then
-        cmd="$BASE_CMD --env_name $env --use_APSER"
+        cmd="$BASE_CMD --env_name $env --use_apser --seed $seed"
     else
-        cmd="$BASE_CMD --env_name $env --no_APSER"
+        cmd="$BASE_CMD --env_name $env --no_apser--seed $seed"
     fi
     
     echo "Command: $cmd"
