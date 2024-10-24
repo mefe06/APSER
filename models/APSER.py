@@ -145,7 +145,7 @@ def APSER(replay_buffer: PrioritizedReplayBuffer, agent, batch_size, beta, disco
         
         # Create a vector of all neighbor indices
         for i, nb_neighbors in enumerate(nb_neighbors_to_update):
-            if nb_neighbors > 1:
+            if nb_neighbors < 2:
                 continue
             neighbors_before = np.clip(indices[i] - np.arange(1, nb_neighbors // 2 + 1), 0, replay_buffer.size - 1)
             neighbors_after = np.clip(indices[i] + np.arange(1, nb_neighbors // 2 + 1), 0, replay_buffer.size - 1)

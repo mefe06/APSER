@@ -86,8 +86,6 @@ def main():
     alpha = args.alpha
     lr = args.lr
     hidden_size = args.hidden_size
-    policy_noise = args.policy_noise
-    noise_clip = args.noise_clip
     exploration_noise = args.exploration_noise
     use_APSER = args.use_apser
     use_importance_weights = args.use_importance_weights
@@ -99,7 +97,6 @@ def main():
     automatic_entropy_tuning = args.automatic_entropy_tuning
     gamma = discount
     seed = args.seed
-    non_linearity = args.non_linearity
     update_neigbors = args.update_neighbors
     start_time_steps =learning_starts
 
@@ -141,12 +138,10 @@ def main():
             replay_buffer = ExperienceReplayBuffer(state_dim, action_dim, buffer_size, device)
     previous_scores = deque(maxlen=buffer_size)
     evaluations = []
-    #file_name = f"SAC_{env_name}_exp"
-    # Loss function for critic
     agent = SAC(**kwargs)
-    # Simulated environment interaction
     done = True
     actor_losses = []
+    critic_losses = []
     total_it = 0
     for t in range(1, max_steps):
         if done:
@@ -175,7 +170,7 @@ def main():
                 if t< learning_starts + uniform_sampling_period:
                     states, actions, next_states, rewards, not_dones, weights = APSER(replay_buffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation, update_neigbors=False, uniform_sampling=True)
                 else:
-                    states, actions, next_states, rewards, not_dones, weights = APSER(replay_buffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation, non_linearity=non_linearity, update_neigbors = update_neigbors)
+                    states, actions, next_states, rewards, not_dones, weights = APSER(replay_buffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation, update_neigbors = update_neigbors)
                 weights = torch.as_tensor(weights, dtype=torch.float32).to(agent.device)
             else:
                 if PER:
@@ -204,7 +199,7 @@ def main():
                 qf1_loss = F.mse_loss(qf1, next_q_value)
                 qf2_loss = F.mse_loss(qf2, next_q_value)
             qf_loss = qf1_loss + qf2_loss
-
+            critic_losses.append(qf_loss.item())
             # Optimize the critic
             agent.critic_optimizer.zero_grad()
             qf_loss.backward()
