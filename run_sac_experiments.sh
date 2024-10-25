@@ -19,12 +19,11 @@ ENVIRONMENTS=(
     "Walker2d-v5"
     "Ant-v5"
     "HalfCheetah-v5"
-    LunarLanderContinuous-v3
 )
 SEEDS=(0)
 
 # Base command
-BASE_CMD="python main_APSER_SAC.py --non_linearity $non_linearity  --update_neighbors --max_steps $MAX_STEPS --buffer_size $BUFFER_SIZE --batch_size $BATCH_SIZE --eval_freq $EVAL_FREQ --learning_starts $learning_starts"
+BASE_CMD="python main_APSER_SAC.py  --update_neighbors --max_steps $MAX_STEPS --buffer_size $BUFFER_SIZE --batch_size $BATCH_SIZE --eval_freq $EVAL_FREQ --learning_starts $learning_starts"
 run_experiment() {
     local env=$1
     local use_apser=$2
@@ -44,7 +43,7 @@ run_experiment() {
     eval $cmd
     
     # Plot results using Python script
-    python plot_results.py $env $use_apser $AGENT_NAME $MAX_STEPS
+    python plot_results.py $env $use_apser $AGENT_NAME $MAX_STEPS $seed
 
     # Wait a bit between experiments
     sleep 5

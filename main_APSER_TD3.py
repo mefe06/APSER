@@ -112,8 +112,8 @@ def main():
         "device": device
     }
     agent_name = "TD3"
-    file_suffix = "APSER" if use_APSER else "vanilla"
-    file_name = f"{file_suffix}_{agent_name}_{env_name}"
+    file_suffix = "APSER" if use_APSER else ("PER" if PER else "vanilla")
+    file_name = f"{file_suffix}_{agent_name}_{env_name}_{seed}"
     # Initialize replay buffer and other variables
     if use_APSER:
         replay_buffer = PrioritizedReplayBuffer(state_dim, action_dim, buffer_size, device)
@@ -208,18 +208,11 @@ def main():
 
             # Evaluate the agent over a number of episodes
             if (t + 1) % eval_freq == 0:
-                if use_APSER:
-                    evaluations.append(evaluate_policy(agent, env_name))
-                    save_with_unique_filename(evaluations, f"results/{file_name}_{t}")
-                    save_with_unique_filename( np.array(td_errors), f"results/{file_name}_td_errors_{t}")
-                    save_with_unique_filename(actor_losses, f"results/{file_name}_actor_losses_{t}")
-                else:
-                    evaluations.append(evaluate_policy(agent, env_name))
-                    save_with_unique_filename(evaluations, f"results/{file_name}_{t}")
-                    rewards = np.array(replay_buffer.reward)
-                    save_with_unique_filename(rewards, f"results/{file_name}_rewards_{t}")
-                    #td_errors = np.array(td_errors)
-                    save_with_unique_filename(np.array(td_errors), f"results/{file_name}_td_errors_{t}")
+                evaluations.append(evaluate_policy(agent, env_name))
+                save_with_unique_filename(evaluations, f"results/{file_name}_{t}")
+                save_with_unique_filename(np.array(td_errors), f"results/{file_name}_td_errors_{t}")
+                save_with_unique_filename(actor_losses, f"results/{file_name}_actor_losses_{t}")
+                save_with_unique_filename(critic_losses, f"results/{file_name}_critic_losses_{t}")
 
 if __name__ == "__main__":
     main()

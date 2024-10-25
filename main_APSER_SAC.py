@@ -13,7 +13,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description='SAC with APSER training script')
     
     # Environment
-    parser.add_argument('--env_name', type=str, default="Ant-v5", help='Gymnasium environment name')
+    parser.add_argument('--env_name', type=str, default="HalfCheetah-v5", help='Gymnasium environment name')
     parser.add_argument('--max_steps', type=int, default=250000, help='Maximum number of training steps')
     parser.add_argument('--eval_freq', type=int, default=2500, help='How often to evaluate the policy')
     parser.add_argument('--file_name', type=str, default="SAC", help='Name of the file to save results')
@@ -127,7 +127,7 @@ def main():
     td_errors = []
     agent_name = "SAC"
     file_suffix = "APSER" if use_APSER else "vanilla"
-    file_name = f"{file_suffix}_{agent_name}_{env_name}"
+    file_name = f"{file_suffix}_{agent_name}_{env_name}_{seed}"
     # Initialize replay buffer and other variables
     if use_APSER:
         replay_buffer = PrioritizedReplayBuffer(state_dim, action_dim, buffer_size, device)
@@ -242,6 +242,7 @@ def main():
                     save_with_unique_filename(evaluations, f"results/{file_name}_{t}")
                     save_with_unique_filename( np.array(td_errors), f"results/{file_name}_td_errors_{t}")
                     save_with_unique_filename(actor_losses, f"results/{file_name}_actor_losses_{t}")
+                    save_with_unique_filename(critic_losses, f"results/{file_name}_critic_losses_{t}")
                 else:
                     evaluations.append(evaluate_policy(agent, env_name))
                     save_with_unique_filename(evaluations, f"results/{file_name}_{t}")

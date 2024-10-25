@@ -140,7 +140,7 @@ def APSER(replay_buffer: PrioritizedReplayBuffer, agent, batch_size, beta, disco
     #                 )
     #                 replay_buffer.update_priority(np.array([indices[i] + n_step]), np.array([new_priority]))
     if update_neigbors:
-        root = 0.5
+        root = 1
         nb_neighbors_to_update = (priorities * max_steps_before_truncation ** root).astype(int)
         
         # Create a vector of all neighbor indices
@@ -152,11 +152,13 @@ def APSER(replay_buffer: PrioritizedReplayBuffer, agent, batch_size, beta, disco
 
             # Concatenate neighbors and compute priorities in a vectorized manner
             all_neighbors = np.concatenate([neighbors_before, neighbors_after])
-            all_priorities = np.concatenate([priorities[i] * ro ** np.arange(1, nb_neighbors // 2 + 1)] * 2)
+            ### as we'll add this to current priorities, this should be centered around 0
+            normalized_priority = (priorities[i]-0.5)
+            all_priorities = np.sign(normalized_priority) * np.concatenate([np.abs(normalized_priority) * ro ** np.arange(1, nb_neighbors // 2 + 1)] * 2)
 
             # Vectorized update of neighbors
             current_priorities = replay_buffer.tree.levels[-1][all_neighbors]
-            updated_priorities = np.minimum(current_priorities + all_priorities, replay_buffer.max_priority)
+            updated_priorities = np.clip(current_priorities + all_priorities, 0, replay_buffer.max_priority)
             replay_buffer.update_priority(all_neighbors, updated_priorities)
 
     return states, actions, next_states, rewards, not_dones, weights
