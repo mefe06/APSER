@@ -158,7 +158,7 @@ def main():
         reward - discount * (1-done)*(agent.critic.Q1(torch.FloatTensor(np.array(next_state)).to(agent.device).unsqueeze(0), 
                                             torch.FloatTensor(agent.select_action(torch.FloatTensor(np.array(next_state)).to(agent.device).unsqueeze(0))).to(agent.device)))
         initial_score = [0]  # Initial score for new transitions
-        transition = [state, action, next_state, reward, done]
+        transition = [state, action, next_state, reward, terminated]
         td_errors.append(td_error.detach().cpu().numpy())
         replay_buffer.add(*transition)
         previous_scores.append(initial_score)

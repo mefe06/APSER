@@ -139,7 +139,7 @@ def main():
         next_state, reward, terminated, truncated, _ = env.step(action)
         done = terminated or truncated
         # Store transition in buffer
-        transition = [state, action, next_state, reward, done]
+        transition = [state, action, next_state, reward, terminated]
         td_error = agent.critic.Q1(torch.FloatTensor(np.array(state)).to(agent.device).unsqueeze(0), torch.FloatTensor(np.array(action)).to(agent.device).unsqueeze(0))  - \
         reward - discount * (1-done)*(agent.critic.Q1(torch.FloatTensor(np.array(next_state)).to(agent.device).unsqueeze(0), 
                                             torch.FloatTensor(agent.select_action(torch.FloatTensor(np.array(next_state)).to(agent.device).unsqueeze(0))).to(agent.device).unsqueeze(0)))
