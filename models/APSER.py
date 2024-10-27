@@ -103,7 +103,7 @@ class PrioritizedReplayBuffer:
 
 
 
-def APSER(replay_buffer: PrioritizedReplayBuffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation: int, bootstrap_steps=1, env=None, update_neigbors= False, uniform_sampling=False, normalize = True):
+def APSER(replay_buffer: PrioritizedReplayBuffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation: int, bootstrap_steps=1, env=None, update_neigbors= False, uniform_sampling=False, normalize = True, sigmoid=False):
     states, actions, next_states, rewards, not_dones, indices, weights = replay_buffer.sample(batch_size)
     predicted_actions = torch.FloatTensor(agent.select_action(states)).to(agent.device).reshape(states.shape[0], -1)
     next_actions = torch.FloatTensor(np.array([replay_buffer.action[indices[i]+1] for i in range(batch_size)])).to(agent.device)
@@ -113,7 +113,11 @@ def APSER(replay_buffer: PrioritizedReplayBuffer, agent, batch_size, beta, disco
     improvements = (current_scores_with_current_critic - previous_scores_with_current_critic)
     if normalize: 
         improvements = (improvements - improvements.mean()) / (improvements.std() + 1e-5)
-    priorities = torch.sigmoid(improvements).T.detach().cpu().numpy()[0]
+
+    if sigmoid:
+        priorities = torch.sigmoid(improvements).T.detach().cpu().numpy()[0]
+    else:
+        priorities = improvements.T.detach().cpu().numpy()[0]
     # Update priorities in replay buffer in batch
     replay_buffer.update_priority(indices, priorities)
     # if update_neigbors:
@@ -141,15 +145,19 @@ def APSER(replay_buffer: PrioritizedReplayBuffer, agent, batch_size, beta, disco
     #                 replay_buffer.update_priority(np.array([indices[i] + n_step]), np.array([new_priority]))
     if update_neigbors:
         root = 1
-        nb_neighbors_to_update = (priorities * max_steps_before_truncation ** root).astype(int)
-        
+        nb_neighbors_to_update = (np.abs(priorities) * max_steps_before_truncation ** root).astype(int)
         # Create a vector of all neighbor indices
         for i, nb_neighbors in enumerate(nb_neighbors_to_update):
             if nb_neighbors < 2:
                 continue
             neighbors_before = np.clip(indices[i] - np.arange(1, nb_neighbors // 2 + 1), 0, replay_buffer.size - 1)
             neighbors_after = np.clip(indices[i] + np.arange(1, nb_neighbors // 2 + 1), 0, replay_buffer.size - 1)
-
+            before_indexes = (replay_buffer.not_done[neighbors_before] == 0)
+            if any(before_indexes):
+                neighbors_before = neighbors_before[:list(before_indexes[::-1]).index(True)]
+            after_indexes = (replay_buffer.not_done[neighbors_after] == 0)
+            if any(after_indexes):
+                neighbors_before = neighbors_before[:list(after_indexes).index(True)]
             # Concatenate neighbors and compute priorities in a vectorized manner
             all_neighbors = np.concatenate([neighbors_before, neighbors_after])
             ### as we'll add this to current priorities, this should be centered around 0

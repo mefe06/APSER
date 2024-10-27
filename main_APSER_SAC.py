@@ -22,8 +22,8 @@ def parse_args():
     # Buffer and batch settings
     parser.add_argument('--buffer_size', type=int, default=250000, help='Size of the replay buffer')
     parser.add_argument('--batch_size', type=int, default=256, help='Batch size for training')
-    parser.add_argument('--learning_starts', type=int, default=25000, help='Steps before starting learning')
-    parser.add_argument('--start_time_steps', type=int, default=25000, help='Initial random action steps')
+    parser.add_argument('--learning_starts', type=int, default=2500, help='Steps before starting learning')
+    parser.add_argument('--start_time_steps', type=int, default=2500, help='Initial random action steps')
     
     # Algorithm parameters
     parser.add_argument('--discount', type=float, default=0.99, help='Discount factor')
@@ -155,7 +155,7 @@ def main():
         # Store transition in buffer
 
         td_error = agent.critic.Q1(torch.FloatTensor(np.array(state)).to(agent.device).unsqueeze(0), torch.FloatTensor(np.array(action)).to(agent.device).unsqueeze(0))  - \
-        reward - discount * (1-done)*(agent.critic.Q1(torch.FloatTensor(np.array(next_state)).to(agent.device).unsqueeze(0), 
+        reward - discount * (1-terminated)*(agent.critic.Q1(torch.FloatTensor(np.array(next_state)).to(agent.device).unsqueeze(0), 
                                             torch.FloatTensor(agent.select_action(torch.FloatTensor(np.array(next_state)).to(agent.device).unsqueeze(0))).to(agent.device)))
         initial_score = [0]  # Initial score for new transitions
         transition = [state, action, next_state, reward, terminated]
