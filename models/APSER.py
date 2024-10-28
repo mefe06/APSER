@@ -120,29 +120,6 @@ def APSER(replay_buffer: PrioritizedReplayBuffer, agent, batch_size, beta, disco
         priorities = improvements.T.detach().cpu().numpy()[0]
     # Update priorities in replay buffer in batch
     replay_buffer.update_priority(indices, priorities)
-    # if update_neigbors:
-    #     # Update scores and priorities of neighboring transitions
-    #     root = 1 # 0.5
-    #     #max_priority = max(replay_buffer.priorities)
-    #     nb_neighbors_to_update = (priorities * max_steps_before_truncation ** root).astype(int)
-    #     current_priorities = replay_buffer.tree.levels[-1]
-
-    #     for i, nb_neighbors in enumerate(nb_neighbors_to_update):
-    #         neighbors_range = range(1, nb_neighbors // 2 + 1)
-    #         for n_step in neighbors_range:
-    #             if indices[i] - n_step >= 0:
-    #                 new_priority = min(
-    #                         current_priorities[indices[i] - n_step] + priorities[i] * ro ** n_step,
-    #                         replay_buffer.max_priority
-    #                     )
-    #                 replay_buffer.update_priority(np.array([indices[i] - n_step]), np.array([new_priority]))
-
-    #             if indices[i] + n_step < len(current_priorities):
-    #                 new_priority = min(
-    #                     current_priorities[indices[i] + n_step] + priorities[i] * ro ** n_step,
-    #                     replay_buffer.max_priority
-    #                 )
-    #                 replay_buffer.update_priority(np.array([indices[i] + n_step]), np.array([new_priority]))
     if update_neigbors:
         root = 1
         nb_neighbors_to_update = (np.abs(priorities) * max_steps_before_truncation ** root).astype(int)
@@ -157,19 +134,17 @@ def APSER(replay_buffer: PrioritizedReplayBuffer, agent, batch_size, beta, disco
                 neighbors_before = neighbors_before[:list(before_indexes[::-1]).index(True)]
             after_indexes = (replay_buffer.not_done[neighbors_after] == 0)
             if any(after_indexes):
-                neighbors_before = neighbors_before[:list(after_indexes).index(True)]
+                neighbors_after = neighbors_after[:list(after_indexes).index(True)]
             # Concatenate neighbors and compute priorities in a vectorized manner
             all_neighbors = np.concatenate([neighbors_before, neighbors_after])
-            ### as we'll add this to current priorities, this should be centered around 0
-            normalized_priority = (priorities[i]-0.5)
-            all_priorities = np.sign(normalized_priority) * np.concatenate([np.abs(normalized_priority) * ro ** np.arange(1, nb_neighbors // 2 + 1)] * 2)
-
+            normalized_priority = priorities[i]
+            all_priorities = np.sign(normalized_priority) * np.concatenate([np.abs(normalized_priority) * ro ** np.arange(1, len(neighbors_before)+1), np.abs(normalized_priority) * ro ** np.arange(1, len(neighbors_after)+1)])
             # Vectorized update of neighbors
             current_priorities = replay_buffer.tree.levels[-1][all_neighbors]
             updated_priorities = np.clip(current_priorities + all_priorities, 0, replay_buffer.max_priority)
-            replay_buffer.update_priority(all_neighbors, updated_priorities)
-
-    return states, actions, next_states, rewards, not_dones, weights
+            if all_neighbors.size > 0:
+                replay_buffer.update_priority(all_neighbors, updated_priorities)
+    return states, actions, next_states, rewards, not_dones, weights, indices
 
 class ExperienceReplayBuffer(object):
     def __init__(self, state_dim, action_dim, max_size=int(1e6), device=None):

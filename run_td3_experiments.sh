@@ -59,9 +59,9 @@ echo "Starting TD3 experiments..."
 
 for env in "${ENVIRONMENTS[@]}"; do
     for seed in "${SEEDS[@]}"; do
-        # With APSER
+        mkdir -p results
         run_experiment $env true $seed
-        #run_experiment $env false $seed
+        mv results "${env}_results_${seed}"
     done
 done
 

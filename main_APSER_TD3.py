@@ -124,7 +124,7 @@ def main():
             replay_buffer = ExperienceReplayBuffer(state_dim, action_dim, buffer_size, device)
     previous_scores = deque(maxlen=buffer_size)
     evaluations = []
-    td_errors = []
+    sampled_indices = []
     agent = TD3(**kwargs)
     done = True
     actor_losses = []
@@ -140,10 +140,10 @@ def main():
         done = terminated or truncated
         # Store transition in buffer
         transition = [state, action, next_state, reward, terminated]
-        td_error = agent.critic.Q1(torch.FloatTensor(np.array(state)).to(agent.device).unsqueeze(0), torch.FloatTensor(np.array(action)).to(agent.device).unsqueeze(0))  - \
-        reward - discount * (1-terminated)*(agent.critic.Q1(torch.FloatTensor(np.array(next_state)).to(agent.device).unsqueeze(0),
-                                            torch.FloatTensor(agent.select_action(torch.FloatTensor(np.array(next_state)).to(agent.device).unsqueeze(0))).to(agent.device).unsqueeze(0)))
-        td_errors.append(td_error.detach().cpu().numpy())
+        # td_error = agent.critic.Q1(torch.FloatTensor(np.array(state)).to(agent.device).unsqueeze(0), torch.FloatTensor(np.array(action)).to(agent.device).unsqueeze(0))  - \
+        # reward - discount * (1-terminated)*(agent.critic.Q1(torch.FloatTensor(np.array(next_state)).to(agent.device).unsqueeze(0),
+        #                                     torch.FloatTensor(agent.select_action(torch.FloatTensor(np.array(next_state)).to(agent.device).unsqueeze(0))).to(agent.device).unsqueeze(0)))
+        # td_errors.append(td_error.detach().cpu().numpy())
         initial_score = [0]  # Initial score for new transitions
         replay_buffer.add(*transition)
         previous_scores.append(initial_score)
@@ -155,7 +155,8 @@ def main():
                 if t< learning_starts + uniform_sampling_period:
                     states, actions, next_states, rewards, not_dones, weights = APSER(replay_buffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation, update_neigbors=False, uniform_sampling=True)
                 else:
-                    states, actions, next_states, rewards, not_dones, weights = APSER(replay_buffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation, update_neigbors = update_neigbors)
+                    states, actions, next_states, rewards, not_dones, weights, indices = APSER(replay_buffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation, update_neigbors = update_neigbors)
+                    sampled_indices.append(list(indices))
                 weights = torch.as_tensor(weights, dtype=torch.float32).to(agent.device)
             else:
                 states, actions, next_states, rewards, not_dones = replay_buffer.sample(batch_size)
@@ -210,7 +211,7 @@ def main():
             if (t + 1) % eval_freq == 0:
                 evaluations.append(evaluate_policy(agent, env_name))
                 save_with_unique_filename(evaluations, f"results/{file_name}_{t}")
-                save_with_unique_filename(np.array(td_errors), f"results/{file_name}_td_errors_{t}")
+                save_with_unique_filename(np.array(sampled_indices), f"results/{file_name}_sampled_indices_{t}")
                 save_with_unique_filename(actor_losses, f"results/{file_name}_actor_losses_{t}")
                 save_with_unique_filename(critic_losses, f"results/{file_name}_critic_losses_{t}")
 

@@ -14,13 +14,13 @@ def plot_results(env_name, use_apser, agent_name="TD3", number_of_steps=250000, 
     # Define paths for files to load
     eval_scores_path = os.path.join(base_path, prefix + file_steps +".npy")
     actor_losses_path = os.path.join(base_path, prefix + "actor_losses_" + file_steps + ".npy")
-    td_errors_path = os.path.join(base_path, prefix + "td_errors_" + file_steps + ".npy")
+    #td_errors_path = os.path.join(base_path, prefix + "td_errors_" + file_steps + ".npy")
     critic_losses_path = os.path.join(base_path, prefix + "critic_losses_" + file_steps + ".npy")
 
     # Load the files
     eval_scores = np.load(eval_scores_path)
     actor_losses = np.load(actor_losses_path)
-    td_errors = np.load(td_errors_path)
+    #td_errors = np.load(td_errors_path)
     critic_losses = np.load(critic_losses_path)
     # Get absolute value of TD errors
     td_errors = np.abs(td_errors.T[0][0])
@@ -30,7 +30,7 @@ def plot_results(env_name, use_apser, agent_name="TD3", number_of_steps=250000, 
     x = [i for i in range(len(actor_losses))]
     fig.add_trace(go.Scatter(x=x, y=actor_losses, mode='lines', name='Actor Losses'))
     fig.add_trace(go.Scatter(x=x, y=eval_scores, mode='lines', name='Eval Scores'))
-    fig.add_trace(go.Scatter(x=x, y=td_errors, mode='lines', name='TD Errors'))
+    #fig.add_trace(go.Scatter(x=x, y=td_errors, mode='lines', name='TD Errors'))
     fig.add_trace(go.Scatter(x=x, y=critic_losses, mode='lines', name='Critic Losses'))
 
     # Add title and labels

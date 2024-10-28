@@ -16,11 +16,11 @@ non_linearity="relu"
 # Environments to test
 ENVIRONMENTS=(
     "Hopper-v5"
-    "Walker2d-v5"
+    #"Walker2d-v5"
     "Ant-v5"
-    "HalfCheetah-v5"
+    #"HalfCheetah-v5"
 )
-SEEDS=(0)
+SEEDS=(0 1 2 3 4)
 
 # Base command
 BASE_CMD="python main_APSER_SAC.py  --update_neighbors --max_steps $MAX_STEPS --buffer_size $BUFFER_SIZE --batch_size $BATCH_SIZE --eval_freq $EVAL_FREQ --learning_starts $learning_starts"
@@ -54,9 +54,9 @@ echo "Starting SAC experiments..."
 
 for env in "${ENVIRONMENTS[@]}"; do
     for seed in "${SEEDS[@]}"; do
-        # With APSER
+        mkdir -p results
         run_experiment $env true $seed
-        #run_experiment $env false $seed
+        mv results "${env}_results_${seed}"
     done
 done
 
