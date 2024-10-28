@@ -27,7 +27,8 @@ BASE_CMD="python main_APSER_SAC.py  --update_neighbors --max_steps $MAX_STEPS --
 run_experiment() {
     local env=$1
     local use_apser=$2
-    local seed=$3
+    local use_per=$3
+    local seed=$4
 
     echo "Running experiment with:"
     echo "Environment: $env"
@@ -36,14 +37,18 @@ run_experiment() {
     if [ "$use_apser" = true ]; then
         cmd="$BASE_CMD --env_name $env --use_apser --seed $seed"
     else
-        cmd="$BASE_CMD --env_name $env --no_apser--seed $seed"
+        if [ "$use_per" = true ]; then
+            cmd="$BASE_CMD --env_name $env --per --no_apser --seed $seed"
+        else
+            cmd="$BASE_CMD --env_name $env --no_apser --seed $seed"
+        fi
     fi
     
     echo "Command: $cmd"
     eval $cmd
     
     # Plot results using Python script
-    python plot_results.py $env $use_apser $AGENT_NAME $MAX_STEPS $seed
+    python plot_results.py $env $use_apser $use_per $AGENT_NAME $MAX_STEPS $seed
 
     # Wait a bit between experiments
     sleep 5
@@ -55,8 +60,8 @@ echo "Starting SAC experiments..."
 for env in "${ENVIRONMENTS[@]}"; do
     for seed in "${SEEDS[@]}"; do
         mkdir -p results
-        run_experiment $env true $seed
-        mv results "${env}_results_${seed}"
+        run_experiment $env false false $seed
+        mv results "vanilla_${AGENT_NAME}_${env}_results_${seed}"
     done
 done
 

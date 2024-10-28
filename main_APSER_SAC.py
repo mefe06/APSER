@@ -3,7 +3,7 @@ import torch.nn.functional as F
 import numpy as np
 from collections import deque
 from models.SAC import SAC
-from models.APSER import APSER, PrioritizedReplayBuffer, ExperienceReplayBuffer
+from models.APSER import APSER, PER, PrioritizedReplayBuffer, ExperienceReplayBuffer
 from models.utils import soft_update
 from utils import evaluate_policy, save_with_unique_filename
 import gymnasium as gym
@@ -89,7 +89,7 @@ def main():
     exploration_noise = args.exploration_noise
     use_APSER = args.use_apser
     use_importance_weights = args.use_importance_weights
-    PER = args.per
+    use_PER = args.per
     uniform_sampling_period = args.uniform_sampling_period
     beta = args.beta
     policy_type = args.policy_type
@@ -126,13 +126,13 @@ def main():
     }
     sampled_indices = []
     agent_name = "SAC"
-    file_suffix = "APSER" if use_APSER else "vanilla"
+    file_suffix = "APSER" if use_APSER else ("PER" if use_PER else "vanilla")
     file_name = f"{file_suffix}_{agent_name}_{env_name}_{seed}"
     # Initialize replay buffer and other variables
     if use_APSER:
         replay_buffer = PrioritizedReplayBuffer(state_dim, action_dim, buffer_size, device)
     else:
-        if PER:
+        if use_PER:
             replay_buffer = PrioritizedReplayBuffer(state_dim, action_dim, buffer_size, device)
         else:
             replay_buffer = ExperienceReplayBuffer(state_dim, action_dim, buffer_size, device)
@@ -174,8 +174,10 @@ def main():
                     sampled_indices.append(list(indices)) 
                 weights = torch.as_tensor(weights, dtype=torch.float32).to(agent.device)
             else:
-                if PER:
-                    states, actions, next_states, rewards, not_dones, weights = replay_buffer.sample(batch_size)
+                if use_PER:
+                    states, actions, next_states, rewards, not_dones, weights, indices = PER(replay_buffer, agent, batch_size, discount)
+                    sampled_indices.append(list(indices))
+                    weights = torch.as_tensor(weights, dtype=torch.float32).to(agent.device) 
                 else:
                     states, actions, next_states, rewards, not_dones = replay_buffer.sample(batch_size)
             ### Update networks

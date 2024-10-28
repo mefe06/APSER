@@ -101,7 +101,11 @@ class PrioritizedReplayBuffer:
         self.max_priority = max(priority.max(), self.max_priority)
         self.tree.batch_set(ind, priority)
 
-
+def PER(replay_buffer: PrioritizedReplayBuffer, agent, batch_size, discount):
+    states, actions, next_states, rewards, not_dones, indices, weights = replay_buffer.sample(batch_size)
+    td_errors = rewards + discount * not_dones * agent.critic_target.Q1(next_states, torch.FloatTensor(agent.select_action(next_states)).to(agent.device).reshape(next_states.shape[0], -1)) - agent.critic_target.Q1(states, actions)
+    replay_buffer.update_priority(indices, np.abs(td_errors.detach().cpu().numpy()).T[0])
+    return states, actions, next_states, rewards, not_dones, weights, indices
 
 def APSER(replay_buffer: PrioritizedReplayBuffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation: int, bootstrap_steps=1, env=None, update_neigbors= False, uniform_sampling=False, normalize = True, sigmoid=False):
     states, actions, next_states, rewards, not_dones, indices, weights = replay_buffer.sample(batch_size)
@@ -123,8 +127,8 @@ def APSER(replay_buffer: PrioritizedReplayBuffer, agent, batch_size, beta, disco
     if update_neigbors:
         root = 1
         nb_neighbors_to_update = (np.abs(priorities) * max_steps_before_truncation ** root).astype(int)
-        #significant_window = int(np.log(1/100)/np.log(ro)) # do not add neigbors too far to calculation
-        #nb_neighbors_to_update = np.clip(nb_neighbors_to_update, 0, significant_window)
+        significant_window = int(np.log(1/100)/np.log(ro)) # do not add neigbors too far to calculation
+        nb_neighbors_to_update = np.clip(nb_neighbors_to_update, 0, significant_window)
         # Create a vector of all neighbor indices
         for i, nb_neighbors in enumerate(nb_neighbors_to_update):
             if nb_neighbors < 2:
@@ -141,7 +145,7 @@ def APSER(replay_buffer: PrioritizedReplayBuffer, agent, batch_size, beta, disco
                 if any(after_indexes):
                     neighbors_after = neighbors_after[:list(after_indexes).index(True)]
             # Concatenate neighbors and compute priorities in a vectorized manner
-            all_neighbors = np.concatenate([neighbors_before, neighbors_after])
+            all_neighbors = np.concatenate([neighbors_before, neighbors_after]).astype(int)
             normalized_priority = priorities[i]
             all_priorities = np.sign(normalized_priority) * np.concatenate([np.abs(normalized_priority) * ro ** np.arange(1, len(neighbors_before)+1), np.abs(normalized_priority) * ro ** np.arange(1, len(neighbors_after)+1)])
             # Vectorized update of neighbors
