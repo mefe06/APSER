@@ -20,11 +20,11 @@ non_linearity="relu"
 # Environments to test
 ENVIRONMENTS=(
     "Hopper-v5"
-    "Walker2d-v5"
+    #"Walker2d-v5"
     "Ant-v5"
-    "HalfCheetah-v5"
+    #"HalfCheetah-v5"
 )
-SEEDS=(0)
+SEEDS=(0 1 2)
 
 # Base command
 BASE_CMD="python main_APSER_TD3.py --update_neighbors --max_steps $MAX_STEPS --buffer_size $BUFFER_SIZE --batch_size $BATCH_SIZE --eval_freq $EVAL_FREQ --learning_starts $learning_starts"

@@ -123,6 +123,8 @@ def APSER(replay_buffer: PrioritizedReplayBuffer, agent, batch_size, beta, disco
     if update_neigbors:
         root = 1
         nb_neighbors_to_update = (np.abs(priorities) * max_steps_before_truncation ** root).astype(int)
+        #significant_window = int(np.log(1/100)/np.log(ro)) # do not add neigbors too far to calculation
+        #nb_neighbors_to_update = np.clip(nb_neighbors_to_update, 0, significant_window)
         # Create a vector of all neighbor indices
         for i, nb_neighbors in enumerate(nb_neighbors_to_update):
             if nb_neighbors < 2:
@@ -133,8 +135,11 @@ def APSER(replay_buffer: PrioritizedReplayBuffer, agent, batch_size, beta, disco
             if any(before_indexes):
                 neighbors_before = neighbors_before[:list(before_indexes[::-1]).index(True)]
             after_indexes = (replay_buffer.not_done[neighbors_after] == 0)
-            if any(after_indexes):
-                neighbors_after = neighbors_after[:list(after_indexes).index(True)]
+            if not(not_dones[i]): ## if sampled transition last of episode, dont take next transitions
+                neighbors_after = []
+            else:
+                if any(after_indexes):
+                    neighbors_after = neighbors_after[:list(after_indexes).index(True)]
             # Concatenate neighbors and compute priorities in a vectorized manner
             all_neighbors = np.concatenate([neighbors_before, neighbors_after])
             normalized_priority = priorities[i]
