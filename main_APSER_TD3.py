@@ -3,7 +3,7 @@ import torch.nn.functional as F
 import numpy as np
 from collections import deque
 from models.TD3 import TD3
-from models.APSER import APSER, PER, PrioritizedReplayBuffer, ExperienceReplayBuffer
+from models.APSER import separate_APSER, APSER, PER, PrioritizedReplayBuffer, ExperienceReplayBuffer
 from utils import evaluate_policy, save_with_unique_filename
 import gymnasium as gym
 import argparse
@@ -45,7 +45,8 @@ def parse_args():
                        help='Use APSER prioritization')
     parser.add_argument('--no_apser', action='store_false', dest='use_apser',
                        help='Disable APSER prioritization')
-    
+    parser.add_argument('--use_separate', action='store_true', default=False,
+                       help='For APSER, use different batches from different buffers for actor and critic')
     parser.add_argument('--use_importance_weights', action='store_true', default=True,
                        help='Use importance sampling weights')
     parser.add_argument('--no_importance_weights', action='store_false', dest='use_importance_weights',
@@ -55,7 +56,6 @@ def parse_args():
                        help='Update neighboring transitions')
     parser.add_argument('--no_update_neighbors', action='store_false', dest='update_neighbors',
                        help='Disable updating neighboring transitions')
-    
     parser.add_argument('--per', action='store_true', default=False,
                        help='Use PER when not using APSER')
 
@@ -92,9 +92,9 @@ def main():
     # Initialize environment
     env = gym.make(env_name)
     np.random.seed(seed)
-    #env.seed(seed)
     env.action_space.seed(seed)
     torch.manual_seed(seed)
+    separate_samples = True
     state_dim = env.observation_space.shape[0]
     action_dim = env.action_space.shape[0]
     max_action = float(env.action_space.high[0])
@@ -112,17 +112,17 @@ def main():
         "device": device
     }
     agent_name = "TD3"
-    file_suffix = "APSER" if use_APSER else ("PER" if use_PER else "vanilla")
+    file_suffix = "separate_APSER" if separate_samples else ("APSER" if use_APSER else ("PER" if use_PER else "vanilla"))
     file_name = f"{file_suffix}_{agent_name}_{env_name}_{seed}"
     # Initialize replay buffer and other variables
-    if use_APSER:
-        replay_buffer = PrioritizedReplayBuffer(state_dim, action_dim, buffer_size, device)
+    if not(use_APSER or use_PER):
+        replay_buffer = ExperienceReplayBuffer(state_dim, action_dim, buffer_size, device)
     else:
-        if use_PER:
-            replay_buffer = PrioritizedReplayBuffer(state_dim, action_dim, buffer_size, device)
+        if separate_samples:
+            actor_replay_buffer = PrioritizedReplayBuffer(state_dim, action_dim, buffer_size, device)
+            critic_replay_buffer = PrioritizedReplayBuffer(state_dim, action_dim, buffer_size, device)
         else:
-            replay_buffer = ExperienceReplayBuffer(state_dim, action_dim, buffer_size, device)
-    previous_scores = deque(maxlen=buffer_size)
+            replay_buffer = PrioritizedReplayBuffer(state_dim, action_dim, buffer_size, device)
     evaluations = []
     sampled_indices = []
     agent = TD3(**kwargs)
@@ -140,23 +140,23 @@ def main():
         done = terminated or truncated
         # Store transition in buffer
         transition = [state, action, next_state, reward, terminated]
-        # td_error = agent.critic.Q1(torch.FloatTensor(np.array(state)).to(agent.device).unsqueeze(0), torch.FloatTensor(np.array(action)).to(agent.device).unsqueeze(0))  - \
-        # reward - discount * (1-terminated)*(agent.critic.Q1(torch.FloatTensor(np.array(next_state)).to(agent.device).unsqueeze(0),
-        #                                     torch.FloatTensor(agent.select_action(torch.FloatTensor(np.array(next_state)).to(agent.device).unsqueeze(0))).to(agent.device).unsqueeze(0)))
-        # td_errors.append(td_error.detach().cpu().numpy())
-        initial_score = [0]  # Initial score for new transitions
-        replay_buffer.add(*transition)
-        previous_scores.append(initial_score)
+        if separate_samples:
+            critic_replay_buffer.add(*transition)
+            actor_replay_buffer.add(*transition)
+        else:
+            replay_buffer.add(*transition)
         state = next_state
         # Do not sample from buffer until learning starts
-        if t > learning_starts:# and len(replay_buffer.buffer) > batch_size:
+        if t > learning_starts:
             # Sample from replay buffer
             if use_APSER:
-                if t< learning_starts + uniform_sampling_period:
-                    states, actions, next_states, rewards, not_dones, weights = APSER(replay_buffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation, update_neigbors=False, uniform_sampling=True)
+                if separate_samples:
+                    actor_states, _, _, _, _, _, actor_indices, critic_states, critic_actions, critic_next_states, critic_rewards, critic_not_dones, critic_weights, critic_indices = separate_APSER(critic_replay_buffer, actor_replay_buffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation, update_neigbors)
+                    sampled_indices.append(list(np.concatenate([actor_indices, critic_indices])))
+                    weights = critic_weights
                 else:
                     states, actions, next_states, rewards, not_dones, weights, indices = APSER(replay_buffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation, update_neigbors = update_neigbors)
-                    sampled_indices.append(list(indices))
+                    sampled_indices.append(list(indices)) 
                 weights = torch.as_tensor(weights, dtype=torch.float32).to(agent.device)
             else:
                 if use_PER:
@@ -165,24 +165,32 @@ def main():
                     weights = torch.as_tensor(weights, dtype=torch.float32).to(agent.device) 
                 else:
                     states, actions, next_states, rewards, not_dones = replay_buffer.sample(batch_size)
+            if not(use_APSER&separate_samples):
+                actor_states = critic_states = states
+                _ = critic_actions = actions
+                _ = critic_next_states = next_states
+                _ = critic_rewards = rewards
+                _ = critic_not_dones = not_dones
+                actor_weights = critic_weights = weights
+                _ = _ = indices
             ### Update networks
             agent.total_it += 1
             with torch.no_grad():
                 # Select action according to the target policy and add target smoothing regularization
-                noise = (torch.randn_like(actions) * agent.policy_noise).clamp(-agent.noise_clip, agent.noise_clip)
-                next_actions = (agent.actor_target(next_states) + noise).clamp(-agent.max_action, agent.max_action)
+                noise = (torch.randn_like(critic_actions) * agent.policy_noise).clamp(-agent.noise_clip, agent.noise_clip)
+                next_actions = (agent.actor_target(critic_next_states) + noise).clamp(-agent.max_action, agent.max_action)
 
                 # Compute the target Q-value
-                target_Q1, target_Q2 = agent.critic_target(next_states, next_actions)
+                target_Q1, target_Q2 = agent.critic_target(critic_next_states, next_actions)
                 target_Q = torch.min(target_Q1, target_Q2)
-                target_Q = rewards + not_dones * agent.discount * target_Q
+                target_Q = critic_rewards + critic_not_dones * agent.discount * target_Q
 
             # Get the current Q-value estimates
-            current_Q1, current_Q2 = agent.critic(states, actions)
+            current_Q1, current_Q2 = agent.critic(critic_states, critic_actions)
 
             # Compute the critic loss
             if use_importance_weights&use_APSER:
-                critic_loss = (weights*F.mse_loss(current_Q1, target_Q, reduction='none')).mean() + (weights*F.mse_loss(current_Q2, target_Q, reduction='none')).mean()
+                critic_loss = (critic_weights*F.mse_loss(current_Q1, target_Q, reduction='none')).mean() + (critic_weights*F.mse_loss(current_Q2, target_Q, reduction='none')).mean()
             else:
                 critic_loss = F.mse_loss(current_Q1, target_Q) + F.mse_loss(current_Q2, target_Q)
             critic_losses.append(critic_loss.item())
@@ -196,9 +204,9 @@ def main():
 
                 # Compute the actor loss
                 if use_importance_weights&use_APSER:
-                    actor_loss = -(weights*agent.critic.Q1(states, agent.actor(states))).mean()
+                    actor_loss = -(actor_weights*agent.critic.Q1(actor_states, agent.actor(actor_states))).mean()
                 else:
-                    actor_loss = -agent.critic.Q1(states, agent.actor(states)).mean()
+                    actor_loss = -agent.critic.Q1(actor_states, agent.actor(actor_states)).mean()
                 actor_losses.append(actor_loss.item())
                 # Optimize the actor
                 agent.actor_optimizer.zero_grad()

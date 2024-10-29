@@ -155,6 +155,12 @@ def APSER(replay_buffer: PrioritizedReplayBuffer, agent, batch_size, beta, disco
                 replay_buffer.update_priority(all_neighbors, updated_priorities)
     return states, actions, next_states, rewards, not_dones, weights, indices
 
+def separate_APSER(critic_replay_buffer: PrioritizedReplayBuffer, actor_replay_buffer:PrioritizedReplayBuffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation, update_neigbors):
+    actor_states, actor_actions, actor_next_states, actor_rewards, actor_not_dones, actor_weights, actor_indices = APSER(actor_replay_buffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation, update_neigbors = update_neigbors)
+    critic_states, critic_actions, critic_next_states, critic_rewards, critic_not_dones, critic_weights, critic_indices = PER(critic_replay_buffer, agent, batch_size, discount)
+    return actor_states, actor_actions, actor_next_states, actor_rewards, actor_not_dones, actor_weights, actor_indices, critic_states, critic_actions, critic_next_states, critic_rewards, critic_not_dones, critic_weights, critic_indices
+
+
 class ExperienceReplayBuffer(object):
     def __init__(self, state_dim, action_dim, max_size=int(1e6), device=None):
         self.device = device
