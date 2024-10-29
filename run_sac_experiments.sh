@@ -63,7 +63,7 @@ echo "Starting SAC experiments..."
 for env in "${ENVIRONMENTS[@]}"; do
     for seed in "${SEEDS[@]}"; do
         mkdir -p results
-        run_experiment $env true false $seed
+        run_experiment $env true false $seed true
         mv results "separate_apser_${AGENT_NAME}_${env}_results_${seed}"
     done
 done

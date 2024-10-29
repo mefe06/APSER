@@ -151,7 +151,7 @@ def main():
             # Sample from replay buffer
             if use_APSER:
                 if separate_samples:
-                    actor_states, _, _, _, _, _, actor_indices, critic_states, critic_actions, critic_next_states, critic_rewards, critic_not_dones, critic_weights, critic_indices = separate_APSER(critic_replay_buffer, actor_replay_buffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation, update_neigbors)
+                    actor_states, _, _, _, _, actor_weights, actor_indices, critic_states, critic_actions, critic_next_states, critic_rewards, critic_not_dones, critic_weights, critic_indices = separate_APSER(critic_replay_buffer, actor_replay_buffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation, update_neigbors)
                     sampled_indices.append(list(np.concatenate([actor_indices, critic_indices])))
                     weights = critic_weights
                 else:
