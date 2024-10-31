@@ -35,7 +35,7 @@ run_experiment() {
     echo "APSER: $use_apser"
     
     if [ "$use_apser" = true ]; then
-        if [ "$use_apser" = true ]; then
+        if [ "$separate_apser" = true ]; then
             cmd="$BASE_CMD --use_separate --env_name $env --use_apser --seed $seed"
         else
             cmd="$BASE_CMD --env_name $env --use_apser --seed $seed"
@@ -63,8 +63,8 @@ echo "Starting SAC experiments..."
 for env in "${ENVIRONMENTS[@]}"; do
     for seed in "${SEEDS[@]}"; do
         mkdir -p results
-        run_experiment $env true false $seed true
-        mv results "separate_apser_${AGENT_NAME}_${env}_results_${seed}"
+        run_experiment "$env" true false "$seed" true
+        mv results "sum_tree_save_separate_apser_${AGENT_NAME}_${env}_results_${seed}"
     done
 done
 

@@ -1,6 +1,35 @@
 import torch
 import numpy as np
 
+def compute_td_error(agent, states, actions, next_states, rewards, not_dones, discount):
+    """Compute TD error for priority updates."""
+    states = torch.FloatTensor(states).to(agent.device)
+    actions = torch.FloatTensor(actions).to(agent.device)
+    next_states = torch.FloatTensor(next_states).to(agent.device)
+    rewards = torch.FloatTensor(rewards).to(agent.device)
+    not_dones = torch.FloatTensor(not_dones).to(agent.device)
+    with torch.no_grad():
+        # Get next action from current policy
+        next_actions = torch.as_tensor(agent.select_action(next_states), dtype=torch.float)
+        # noise = torch.randn_like(next_actions) * agent.policy_noise
+        # noise = noise.clamp(-agent.noise_clip, agent.noise_clip)
+        # next_actions = (next_actions + noise).clamp(-agent.max_action, agent.max_action)
+        
+        # Compute target Q-value using minimum of both critics
+        target_Q1, target_Q2 = agent.critic_target(next_states, next_actions)
+        target_Q = torch.min(target_Q1, target_Q2)
+        target_Q = rewards + not_dones * discount * target_Q
+        
+        # Compute current Q-value
+        current_Q1, current_Q2 = agent.critic(states, actions)
+        current_Q = torch.min(current_Q1, current_Q2)
+        
+        td_error = target_Q - current_Q
+    
+    return td_error
+
+
+
 class SumTree(object):
     def __init__(self, max_size):
         self.levels = [np.zeros(1)]
@@ -101,10 +130,11 @@ class PrioritizedReplayBuffer:
         self.max_priority = max(priority.max(), self.max_priority)
         self.tree.batch_set(ind, priority)
 
-def PER(replay_buffer: PrioritizedReplayBuffer, agent, batch_size, discount):
+def PER(replay_buffer: PrioritizedReplayBuffer, agent, batch_size, discount, alpha=1):
     states, actions, next_states, rewards, not_dones, indices, weights = replay_buffer.sample(batch_size)
-    td_errors = rewards + discount * not_dones * agent.critic_target.Q1(next_states, torch.FloatTensor(agent.select_action(next_states)).to(agent.device).reshape(next_states.shape[0], -1)) - agent.critic_target.Q1(states, actions)
-    replay_buffer.update_priority(indices, np.abs(td_errors.detach().cpu().numpy()).T[0])
+    #td_errors = rewards + discount * not_dones * agent.critic_target.Q1(next_states, torch.FloatTensor(agent.select_action(next_states)).to(agent.device).reshape(next_states.shape[0], -1)) - agent.critic_target.Q1(states, actions)
+    td_errors = compute_td_error(agent, states, actions, next_states, rewards, not_dones, discount)
+    replay_buffer.update_priority(indices, np.power(np.abs(td_errors.detach().cpu().numpy()), alpha).T[0])
     return states, actions, next_states, rewards, not_dones, weights, indices
 
 def APSER(replay_buffer: PrioritizedReplayBuffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation: int, bootstrap_steps=1, env=None, update_neigbors= False, uniform_sampling=False, normalize = True, sigmoid=False):

@@ -8,7 +8,7 @@ from models.utils import soft_update
 from utils import evaluate_policy, save_with_unique_filename
 import gymnasium as gym
 import argparse
-
+import pickle
 def parse_args():
     parser = argparse.ArgumentParser(description='SAC with APSER training script')
     
@@ -99,6 +99,7 @@ def main():
     gamma = discount
     seed = args.seed
     update_neigbors = args.update_neighbors
+    separate_samples=args.use_separate
     start_time_steps =learning_starts
 
     # Hyperparameters
@@ -109,7 +110,6 @@ def main():
     state_dim = env.observation_space.shape[0]
     action_dim = env.action_space.shape[0]
     max_action = float(env.action_space.high[0])
-    separate_samples = True
     max_steps_before_truncation = env.spec.max_episode_steps
     device = torch.device("cuda:0" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu"))
     kwargs = {
@@ -251,6 +251,9 @@ def main():
                 save_with_unique_filename( np.array(sampled_indices), f"results/{file_name}_sampled_indices_{t}")
                 save_with_unique_filename(actor_losses, f"results/{file_name}_actor_losses_{t}")
                 save_with_unique_filename(critic_losses, f"results/{file_name}_critic_losses_{t}")
+            if (t + 1) % (eval_freq*5) == 0:
+                with open(f"results/sum_tree_debug_{t}.pkl", "wb") as f:
+                    pickle.dump(actor_replay_buffer.tree, f)
 
 if __name__ == "__main__":
     main()
