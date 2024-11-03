@@ -23,7 +23,7 @@ ENVIRONMENTS=(
 SEEDS=(0 1 2)
 
 # Base command
-BASE_CMD="python main_APSER_SAC.py  --update_neighbors --max_steps $MAX_STEPS --buffer_size $BUFFER_SIZE --batch_size $BATCH_SIZE --eval_freq $EVAL_FREQ --learning_starts $learning_starts"
+BASE_CMD="python main_APSER_SAC.py  --no_update_neighbors --max_steps $MAX_STEPS --buffer_size $BUFFER_SIZE --batch_size $BATCH_SIZE --eval_freq $EVAL_FREQ --learning_starts $learning_starts"
 run_experiment() {
     local env=$1
     local use_apser=$2
@@ -64,7 +64,7 @@ for env in "${ENVIRONMENTS[@]}"; do
     for seed in "${SEEDS[@]}"; do
         mkdir -p results
         run_experiment "$env" true false "$seed" true
-        mv results "sum_tree_save_separate_apser_${AGENT_NAME}_${env}_results_${seed}"
+        mv results "per_alpha_1_critic_actor_apser_corrected_no_neighbors_${AGENT_NAME}_${env}_results_${seed}"
     done
 done
 

@@ -1,6 +1,15 @@
 import gymnasium as gym
 import numpy as np
 import os 
+import glob
+
+def cleanup_previous_saves(dir, file_name, current_step):
+    # Find all files matching the pattern except the current save
+    for file_path in glob.glob(f"{dir}/{file_name}_*"):
+        # Check if file name contains an earlier step
+        if file_path.endswith(f"_{current_step}.npy") or file_path.endswith(".pkl"):
+            continue  # Skip the latest save
+        os.remove(file_path) 
 
 def evaluate_policy(agent, env_name, eval_episodes=10, show_evals = False):
     eval_env = gym.make(env_name)

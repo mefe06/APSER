@@ -5,7 +5,7 @@ from collections import deque
 from models.SAC import SAC
 from models.APSER import separate_APSER, APSER, PER, PrioritizedReplayBuffer, ExperienceReplayBuffer
 from models.utils import soft_update
-from utils import evaluate_policy, save_with_unique_filename
+from utils import evaluate_policy, save_with_unique_filename, cleanup_previous_saves
 import gymnasium as gym
 import argparse
 import pickle
@@ -14,7 +14,7 @@ def parse_args():
     
     # Environment
     parser.add_argument('--env_name', type=str, default="Hopper-v5", help='Gymnasium environment name')
-    parser.add_argument('--max_steps', type=int, default=250000, help='Maximum number of training steps')
+    parser.add_argument('--max_steps', type=int, default=250000, help='Maximum number of training steps') 
     parser.add_argument('--eval_freq', type=int, default=2500, help='How often to evaluate the policy')
     parser.add_argument('--file_name', type=str, default="SAC", help='Name of the file to save results')
     parser.add_argument('--seed', type=int, default=0, help='Random seed')
@@ -22,8 +22,8 @@ def parse_args():
     # Buffer and batch settings
     parser.add_argument('--buffer_size', type=int, default=250000, help='Size of the replay buffer')
     parser.add_argument('--batch_size', type=int, default=256, help='Batch size for training')
-    parser.add_argument('--learning_starts', type=int, default=2500, help='Steps before starting learning')
-    parser.add_argument('--start_time_steps', type=int, default=2500, help='Initial random action steps')
+    parser.add_argument('--learning_starts', type=int, default=25000, help='Steps before starting learning')
+    parser.add_argument('--start_time_steps', type=int, default=25000, help='Initial random action steps')
     
     # Algorithm parameters
     parser.add_argument('--discount', type=float, default=0.99, help='Discount factor')
@@ -251,9 +251,17 @@ def main():
                 save_with_unique_filename( np.array(sampled_indices), f"results/{file_name}_sampled_indices_{t}")
                 save_with_unique_filename(actor_losses, f"results/{file_name}_actor_losses_{t}")
                 save_with_unique_filename(critic_losses, f"results/{file_name}_critic_losses_{t}")
-            if (t + 1) % (eval_freq*5) == 0:
-                with open(f"results/sum_tree_debug_{t}.pkl", "wb") as f:
-                    pickle.dump(actor_replay_buffer.tree, f)
+                if (t + eval_freq) >= max_steps:
+                    cleanup_previous_saves( "results", file_name, t)
+            if (t + 1) % (eval_freq*5) == 0: 
+                if separate_samples:
+                    with open(f"results/actor_sum_tree_debug_{t}.pkl", "wb") as f:
+                        pickle.dump(actor_replay_buffer.tree, f)
+                    with open(f"results/critic_sum_tree_debug_{t}.pkl", "wb") as f:
+                        pickle.dump(critic_replay_buffer.tree, f)
+                else:
+                    with open(f"results/sum_tree_debug_{t}.pkl", "wb") as f:
+                        pickle.dump(replay_buffer.tree, f)
 
 if __name__ == "__main__":
     main()

@@ -61,20 +61,53 @@ class SumTree(object):
 
         return ind
 
+    # def set(self, ind, new_priority):
+    #     priority_diff = new_priority - self.levels[-1][ind]
+
+    #     for nodes in self.levels[::-1]:
+    #         np.add.at(nodes, ind, priority_diff)
+    #         ind //= 2
+
     def set(self, ind, new_priority):
+        # Ensure non-negative priorities by using max(new_priority, epsilon)
+        epsilon = 1e-6
+        new_priority = max(new_priority, epsilon)
+        
+        # Calculate the priority difference
         priority_diff = new_priority - self.levels[-1][ind]
 
-        for nodes in self.levels[::-1]:
-            np.add.at(nodes, ind, priority_diff)
+        # Update the leaf node
+        self.levels[-1][ind] = new_priority
+
+        # Propagate the priority difference up the tree
+        for nodes in self.levels[::-1][1:]:  # Start from the last non-leaf level
+            np.add.at(nodes, ind // 2, priority_diff)
             ind //= 2
 
+
+    # def batch_set(self, ind, new_priority):
+    #     # Confirm we don't increment a node twice
+    #     ind, unique_ind = np.unique(ind, return_index=True)
+    #     priority_diff = new_priority[unique_ind] - self.levels[-1][ind]
+
+    #     for nodes in self.levels[::-1]:
+    #         np.add.at(nodes, ind, priority_diff)
+    #         ind //= 2
+
     def batch_set(self, ind, new_priority):
-        # Confirm we don't increment a node twice
+        epsilon = 1e-6
+        new_priority = np.maximum(new_priority, epsilon)  # Make priorities non-negative
+
+        # Ensure we only update unique indices once
         ind, unique_ind = np.unique(ind, return_index=True)
         priority_diff = new_priority[unique_ind] - self.levels[-1][ind]
 
-        for nodes in self.levels[::-1]:
-            np.add.at(nodes, ind, priority_diff)
+        # Update the leaf nodes
+        self.levels[-1][ind] = new_priority[unique_ind]
+
+        # Propagate the priority differences up the tree
+        for nodes in self.levels[::-1][1:]:  # Start from the last non-leaf level
+            np.add.at(nodes, ind // 2, priority_diff)
             ind //= 2
 
 
@@ -137,22 +170,45 @@ def PER(replay_buffer: PrioritizedReplayBuffer, agent, batch_size, discount, alp
     replay_buffer.update_priority(indices, np.power(np.abs(td_errors.detach().cpu().numpy()), alpha).T[0])
     return states, actions, next_states, rewards, not_dones, weights, indices
 
-def APSER(replay_buffer: PrioritizedReplayBuffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation: int, bootstrap_steps=1, env=None, update_neigbors= False, uniform_sampling=False, normalize = True, sigmoid=False):
+def APSER(replay_buffer: PrioritizedReplayBuffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation: int, bootstrap_steps=1, env=None, update_neigbors= False, uniform_sampling=False, normalize = False, sigmoid=False):
     states, actions, next_states, rewards, not_dones, indices, weights = replay_buffer.sample(batch_size)
     predicted_actions = torch.FloatTensor(agent.select_action(states)).to(agent.device).reshape(states.shape[0], -1)
     next_actions = torch.FloatTensor(np.array([replay_buffer.action[indices[i]+1] for i in range(batch_size)])).to(agent.device)
-    previous_scores_with_current_critic = rewards + discount * not_dones * agent.critic.Q1(next_states, next_actions).detach()
-    current_scores_with_current_critic = agent.critic.Q1(states, predicted_actions).detach()
-    # Calculate improvement and priority for batch
-    improvements = (current_scores_with_current_critic - previous_scores_with_current_critic)
+    #Q1_current = agent.critic.Q1(states, predicted_actions).detach()
+    #Q2_current = agent.critic.Q2(states, predicted_actions).detach() if hasattr(agent.critic, 'Q2') else Q1_current
+    Q1_current, Q2_current = agent.critic(states, predicted_actions)
+    Q1_current, Q2_current = Q1_current.detach(), Q2_current.detach()
+    current_scores = torch.min(Q1_current, Q2_current)
+    # Q1_buffer = agent.critic.Q1(states, actions).detach()
+    # Q2_buffer = agent.critic.Q2(states, actions).detach() if hasattr(agent.critic, 'Q2') else Q1_buffer
+    Q1_buffer, Q2_buffer = agent.critic(states, actions)
+    Q1_buffer, Q2_buffer = Q1_buffer.detach(), Q2_buffer.detach() 
+    buffer_scores = torch.min(Q1_buffer, Q2_buffer)
+    #improvements = torch.abs(current_scores - buffer_scores) + 1e-6
+    improvements=buffer_scores-current_scores
+
+    # previous_scores_with_current_critic = rewards + discount * not_dones * agent.critic.Q1(next_states, next_actions).detach()
+    # current_scores_with_current_critic = agent.critic.Q1(states, predicted_actions).detach()
+    # # Calculate improvement and priority for batch
+    # improvements = (current_scores_with_current_critic - previous_scores_with_current_critic)
     if normalize: 
         improvements = (improvements - improvements.mean()) / (improvements.std() + 1e-5)
 
-    if sigmoid:
-        priorities = torch.sigmoid(improvements).T.detach().cpu().numpy()[0]
-    else:
-        priorities = improvements.T.detach().cpu().numpy()[0]
+    # if sigmoid:
+    #     priorities = torch.sigmoid(improvements).T.detach().cpu().numpy()[0]
+    # else:
+    #     priorities = improvements.T.detach().cpu().numpy()[0]
     # Update priorities in replay buffer in batch
+
+    epsilon = 1e-6
+    priorities = improvements.T.detach().cpu().numpy()[0] + abs(improvements.min().item()) + epsilon
+    
+    #priorities = improvements.abs().T.detach().cpu().numpy()[0] + 1e-6
+    # Calculate inverted priority
+
+    # # Optional: Add maximum priority clipping
+    # max_priority = 100.0  # Adjust this value based on your needs
+    # priorities = np.clip(priorities, 0, max_priority)
     replay_buffer.update_priority(indices, priorities)
     if update_neigbors:
         root = 1
@@ -187,7 +243,7 @@ def APSER(replay_buffer: PrioritizedReplayBuffer, agent, batch_size, beta, disco
 
 def separate_APSER(critic_replay_buffer: PrioritizedReplayBuffer, actor_replay_buffer:PrioritizedReplayBuffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation, update_neigbors):
     actor_states, actor_actions, actor_next_states, actor_rewards, actor_not_dones, actor_weights, actor_indices = APSER(actor_replay_buffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation, update_neigbors = update_neigbors)
-    critic_states, critic_actions, critic_next_states, critic_rewards, critic_not_dones, critic_weights, critic_indices = PER(critic_replay_buffer, agent, batch_size, discount)
+    critic_states, critic_actions, critic_next_states, critic_rewards, critic_not_dones, critic_weights, critic_indices = PER(critic_replay_buffer, agent, batch_size, discount, alpha=1)
     return actor_states, actor_actions, actor_next_states, actor_rewards, actor_not_dones, actor_weights, actor_indices, critic_states, critic_actions, critic_next_states, critic_rewards, critic_not_dones, critic_weights, critic_indices
 
 
