@@ -1,10 +1,10 @@
 import torch
 import torch.nn.functional as F
 import numpy as np
-from collections import deque
+import pickle
 from models.TD3 import TD3
 from models.APSER import separate_APSER, APSER, PER, PrioritizedReplayBuffer, ExperienceReplayBuffer
-from utils import evaluate_policy, save_with_unique_filename
+from utils import evaluate_policy, save_with_unique_filename, cleanup_previous_saves
 import gymnasium as gym
 import argparse
 def parse_args():
@@ -88,6 +88,7 @@ def main():
     file_name = args.file_name
     seed = args.seed
     update_neigbors = args.update_neighbors
+    separate_samples=args.use_separate
     start_time_steps =learning_starts
     # Initialize environment
     env = gym.make(env_name)
@@ -224,9 +225,20 @@ def main():
             if (t + 1) % eval_freq == 0:
                 evaluations.append(evaluate_policy(agent, env_name))
                 save_with_unique_filename(evaluations, f"results/{file_name}_{t}")
-                save_with_unique_filename(np.array(sampled_indices), f"results/{file_name}_sampled_indices_{t}")
+                save_with_unique_filename( np.array(sampled_indices), f"results/{file_name}_sampled_indices_{t}")
                 save_with_unique_filename(actor_losses, f"results/{file_name}_actor_losses_{t}")
                 save_with_unique_filename(critic_losses, f"results/{file_name}_critic_losses_{t}")
+                if (t + eval_freq) >= max_steps:
+                    cleanup_previous_saves( "results", file_name, t)
+            if (t + 1) % (eval_freq*5) == 0: 
+                if separate_samples:
+                    with open(f"results/actor_sum_tree_debug_{t}.pkl", "wb") as f:
+                        pickle.dump(actor_replay_buffer.tree, f)
+                    with open(f"results/critic_sum_tree_debug_{t}.pkl", "wb") as f:
+                        pickle.dump(critic_replay_buffer.tree, f)
+                else:
+                    with open(f"results/sum_tree_debug_{t}.pkl", "wb") as f:
+                        pickle.dump(replay_buffer.tree, f)
 
 if __name__ == "__main__":
     main()

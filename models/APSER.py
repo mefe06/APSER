@@ -11,6 +11,8 @@ def compute_td_error(agent, states, actions, next_states, rewards, not_dones, di
     with torch.no_grad():
         # Get next action from current policy
         next_actions = torch.as_tensor(agent.select_action(next_states), dtype=torch.float)
+        if next_actions.shape[0] != next_states.shape[0]:
+            next_actions = next_actions.reshape(next_states.shape[0], -1)
         # noise = torch.randn_like(next_actions) * agent.policy_noise
         # noise = noise.clamp(-agent.noise_clip, agent.noise_clip)
         # next_actions = (next_actions + noise).clamp(-agent.max_action, agent.max_action)
