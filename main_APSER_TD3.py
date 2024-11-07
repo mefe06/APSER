@@ -22,13 +22,14 @@ def parse_args():
     parser.add_argument('--batch_size', type=int, default=256, help='Batch size for training')
     parser.add_argument('--learning_starts', type=int, default=25000, help='Steps before starting learning')
     parser.add_argument('--start_time_steps', type=int, default=25000, help='Initial random action steps')
-    
+
     # Algorithm parameters
     parser.add_argument('--discount', type=float, default=0.99, help='Discount factor')
     parser.add_argument('--tau', type=float, default=0.005, help='Soft update parameter')
     parser.add_argument('--ro', type=float, default=0.9, help='Decay factor for updating nearby transitions')
     parser.add_argument('--alpha', type=float, default=0.6, help='Prioritization exponent')
-    
+    parser.add_argument('--zeta_initial', type=float, default=0.1, help='Initial zeta value')
+    parser.add_argument('--zeta_final', type=float, default=0.75, help='Final zeta value')    
     # TD3 specific
     parser.add_argument('--policy_noise', type=float, default=0.2, help='Noise added to target policy')
     parser.add_argument('--noise_clip', type=float, default=0.5, help='Range to clip target policy noise')
@@ -36,11 +37,11 @@ def parse_args():
     parser.add_argument('--exploration_noise', type=float, default=0.1, help='Exploration noise')
     
     # APSER specific
-    parser.add_argument('--uniform_sampling_period', type=int, default=0, help='Period of uniform sampling')
     parser.add_argument('--beta', type=float, default=0.4, help='Importance sampling exponent')
     parser.add_argument('--PER', action='store_true', help='Use PER when not using APSER (default: False)')
     parser.add_argument('--non_linearity', default="sigmoid")
     # APSER specific - Boolean flags
+    parser.add_argument('--same_batch', action='store_true', default=False)    
     parser.add_argument('--use_apser', action='store_true', default=True,
                        help='Use APSER prioritization')
     parser.add_argument('--no_apser', action='store_false', dest='use_apser',
@@ -83,13 +84,15 @@ def main():
     use_APSER = args.use_apser
     use_importance_weights = args.use_importance_weights
     use_PER = args.PER
-    uniform_sampling_period = args.uniform_sampling_period
     beta = args.beta
     file_name = args.file_name
     seed = args.seed
     update_neigbors = args.update_neighbors
     separate_samples=args.use_separate
     start_time_steps =learning_starts
+    same_batch=args.same_batch
+    zeta_initial = args.zeta_initial
+    zeta_final = args.zeta_final
     # Initialize environment
     env = gym.make(env_name)
     np.random.seed(seed)
@@ -114,6 +117,7 @@ def main():
     }
     agent_name = "TD3"
     file_suffix = "separate_APSER" if separate_samples else ("APSER" if use_APSER else ("PER" if use_PER else "vanilla"))
+    file_suffix = "same_batch" + file_suffix if separate_samples&same_batch else file_suffix
     file_name = f"{file_suffix}_{agent_name}_{env_name}_{seed}"
     # Initialize replay buffer and other variables
     if not(use_APSER or use_PER):
@@ -131,6 +135,7 @@ def main():
     actor_losses = []
     critic_losses = []
     for t in range(1, max_steps):
+        zeta = zeta_initial + (zeta_final - zeta_initial) * t / max_steps ## anneal zeta, as it should be low and increase as critic gets better
         if done:
             state, _ = env.reset()
         if t < start_time_steps:
@@ -152,7 +157,7 @@ def main():
             # Sample from replay buffer
             if use_APSER:
                 if separate_samples:
-                    actor_states, _, _, _, _, actor_weights, actor_indices, critic_states, critic_actions, critic_next_states, critic_rewards, critic_not_dones, critic_weights, critic_indices = separate_APSER(critic_replay_buffer, actor_replay_buffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation, update_neigbors)
+                    actor_states, _, _, _, _, _, actor_indices, critic_states, critic_actions, critic_next_states, critic_rewards, critic_not_dones, critic_weights, critic_indices = separate_APSER(critic_replay_buffer, actor_replay_buffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation, update_neigbors, same_batch, zeta)
                     sampled_indices.append(list(np.concatenate([actor_indices, critic_indices])))
                     weights = critic_weights
                 else:

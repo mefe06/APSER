@@ -1,6 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import argparse
+import os 
+import sys
 
 def plot_averages(path: str, envs: list[str], agent_name: str ,seeds: list[int], steps: int):
     for env in envs:
@@ -20,14 +22,14 @@ def plot_averages(path: str, envs: list[str], agent_name: str ,seeds: list[int],
     plt.savefig(f"uniform_critic_apser_actor_{agent_name}_per_{steps//1000}k_{joint_env_names}")
     print("plot succesfully saved!")
 
-def plot_indices_histogram(path: str, envs: list[str], agent_name: str, seeds: list[int], steps: int):
+def plot_indices_histogram(path: str, results_name, envs: list[str], agent_name: str, seeds: list[int], steps: int):
     for env in envs:
         actor_sum = None
         critic_sum = None
         
         for seed in seeds:
             # Load sampled indices data for each seed
-            file_path = f"{path}/uniform_critic_actor_apser_{agent_name}_{env}_results_{seed}/separate_APSER_{agent_name}_{env}_{seed}_sampled_indices_{steps-1}.npy"
+            file_path = f"{path}/{results_name}_{agent_name}_{env}_results_{seed}/separate_APSER_{agent_name}_{env}_{seed}_sampled_indices_{steps-1}.npy"
             indices = np.load(file_path)
             
             # Split indices into actor and critic parts
@@ -57,7 +59,7 @@ def plot_indices_histogram(path: str, envs: list[str], agent_name: str, seeds: l
         plt.xlabel("Index Bins")
         plt.ylabel("Frequency (Averaged)")
         plt.legend()
-        plt.savefig(f"uniform_critic_apser_actor_{agent_name}_actor_indices_{steps//1000}k_{env}.png")
+        plt.savefig(f"{results_name}_{agent_name}_actor_indices_{steps//1000}k_{env}.png")
         print(f"Actor indices histogram for {env} saved successfully.")
         
         # Plotting critic indices histogram
@@ -67,20 +69,20 @@ def plot_indices_histogram(path: str, envs: list[str], agent_name: str, seeds: l
         plt.xlabel("Index Bins")
         plt.ylabel("Frequency (Averaged)")
         plt.legend()
-        plt.savefig(f"uniform_critic_apser_actor_{agent_name}_critic_indices_{steps//1000}k_{env}.png")
+        plt.savefig(f"{results_name}_{agent_name}_critic_indices_{steps//1000}k_{env}.png")
         print(f"Critic indices histogram for {env} saved successfully.")
 
 import numpy as np
 import matplotlib.pyplot as plt
 
-def plot_sampling_frequency(path: str, envs: list[str], agent_name: str, seeds: list[int], steps: int):
+def plot_sampling_frequency(path: str, result_name, envs: list[str], agent_name: str, seeds: list[int], steps: int):
     for env in envs:
         actor_count = None
         critic_count = None
         
         for seed in seeds:
             # Load sampled indices data for each seed
-            file_path = f"{path}/uniform_critic_actor_apser_{agent_name}_{env}_results_{seed}/separate_APSER_{agent_name}_{env}_{seed}_sampled_indices_{steps-1}.npy"
+            file_path = f"{path}/{result_name}_{agent_name}_{env}_results_{seed}/APSER_{agent_name}_{env}_{seed}_sampled_indices_{steps-1}.npy"
             indices = np.load(file_path)
             
             # Split indices into actor and critic parts
@@ -111,7 +113,7 @@ def plot_sampling_frequency(path: str, envs: list[str], agent_name: str, seeds: 
         plt.xlabel("Transition Index")
         plt.ylabel("Sampling Count (Averaged)")
         plt.legend()
-        plt.savefig(f"uniform_critic_apser_actor_{agent_name}_actor_sampling_frequency_{steps//1000}k_{env}.png")
+        plt.savefig(f"{result_name}_{agent_name}_actor_sampling_frequency_{steps//1000}k_{env}.png")
         print(f"Actor sampling frequency plot for {env} saved successfully.")
         
         # Plotting critic sampling frequency
@@ -121,16 +123,17 @@ def plot_sampling_frequency(path: str, envs: list[str], agent_name: str, seeds: 
         plt.xlabel("Transition Index")
         plt.ylabel("Sampling Count (Averaged)")
         plt.legend()
-        plt.savefig(f"uniform_critic_apser_actor_{agent_name}_critic_sampling_frequency_{steps//1000}k_{env}.png")
+        plt.savefig(f"{result_name}_{agent_name}_critic_sampling_frequency_{steps//1000}k_{env}.png")
         print(f"Critic sampling frequency plot for {env} saved successfully.")
 
 
 if __name__ == "__main__":
     # TODO: fill to parse from command line and run plot averages
     parser = argparse.ArgumentParser(description="Plot average performance over multiple environments and seeds.")
-    
+    dir_path = os.getcwd()
     # Define command-line arguments
-    parser.add_argument("--path", type=str, required=True, help="Path prefix for numpy files.")
+    parser.add_argument("--path", type=str, required=False, default=dir_path, help="Path prefix for numpy files.")
+    parser.add_argument("--result_name", type=str, required=True)
     parser.add_argument("--envs", type=str, nargs='+', required=True, help="List of environments.")
     parser.add_argument("--agent_name", type=str, required=True, help="Name of the agent.")
     parser.add_argument("--seeds", type=int, nargs='+', required=True, help="List of seed values.")
@@ -138,8 +141,4 @@ if __name__ == "__main__":
     
     # Parse arguments
     args = parser.parse_args()
-
-    # Run the function with parsed arguments
-    #plot_averages(args.path, args.envs, args.agent_name, args.seeds, args.steps)
-    #plot_indices_histogram(args.path, args.envs, args.agent_name, args.seeds, args.steps)
-    plot_sampling_frequency(args.path, args.envs, args.agent_name, args.seeds, args.steps)
+    plot_sampling_frequency(args.path, args.result_name, args.envs, args.agent_name, args.seeds, args.steps)

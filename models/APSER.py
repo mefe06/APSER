@@ -9,20 +9,12 @@ def compute_td_error(agent, states, actions, next_states, rewards, not_dones, di
     rewards = torch.FloatTensor(rewards).to(agent.device)
     not_dones = torch.FloatTensor(not_dones).to(agent.device)
     with torch.no_grad():
-        # Get next action from current policy
         next_actions = torch.as_tensor(agent.select_action(next_states), dtype=torch.float)
         if next_actions.shape[0] != next_states.shape[0]:
             next_actions = next_actions.reshape(next_states.shape[0], -1)
-        # noise = torch.randn_like(next_actions) * agent.policy_noise
-        # noise = noise.clamp(-agent.noise_clip, agent.noise_clip)
-        # next_actions = (next_actions + noise).clamp(-agent.max_action, agent.max_action)
-        
-        # Compute target Q-value using minimum of both critics
         target_Q1, target_Q2 = agent.critic_target(next_states, next_actions)
         target_Q = torch.min(target_Q1, target_Q2)
         target_Q = rewards + not_dones * discount * target_Q
-        
-        # Compute current Q-value
         current_Q1, current_Q2 = agent.critic(states, actions)
         current_Q = torch.min(current_Q1, current_Q2)
         
@@ -35,15 +27,11 @@ def compute_td_error(agent, states, actions, next_states, rewards, not_dones, di
 class SumTree(object):
     def __init__(self, max_size):
         self.levels = [np.zeros(1)]
-        # Tree construction
-        # Double the number of nodes at each level
         level_size = 1
         while level_size < max_size:
             level_size *= 2
             self.levels.append(np.zeros(level_size))
 
-    # Batch binary search through sum tree
-    # Sample a priority between 0 and the max priority and then search the tree for the corresponding index
     def sample(self, batch_size):
         value = np.random.uniform(0, self.levels[0][0], size=batch_size)
         ind = np.zeros(batch_size, dtype=int)
@@ -51,24 +39,11 @@ class SumTree(object):
         for nodes in self.levels[1:]:
             ind *= 2
             left_sum = nodes[ind]
-
             is_greater = np.greater(value, left_sum)
-
-            # If value > left_sum -> go right (+1), else go left (+0)
             ind += is_greater
-
-            # If we go right, we only need to consider the values in the right tree
-            # so we subtract the sum of values in the left tree
             value -= left_sum * is_greater
 
         return ind
-
-    # def set(self, ind, new_priority):
-    #     priority_diff = new_priority - self.levels[-1][ind]
-
-    #     for nodes in self.levels[::-1]:
-    #         np.add.at(nodes, ind, priority_diff)
-    #         ind //= 2
 
     def set(self, ind, new_priority):
         # Ensure non-negative priorities by using max(new_priority, epsilon)
@@ -85,16 +60,6 @@ class SumTree(object):
         for nodes in self.levels[::-1][1:]:  # Start from the last non-leaf level
             np.add.at(nodes, ind // 2, priority_diff)
             ind //= 2
-
-
-    # def batch_set(self, ind, new_priority):
-    #     # Confirm we don't increment a node twice
-    #     ind, unique_ind = np.unique(ind, return_index=True)
-    #     priority_diff = new_priority[unique_ind] - self.levels[-1][ind]
-
-    #     for nodes in self.levels[::-1]:
-    #         np.add.at(nodes, ind, priority_diff)
-    #         ind //= 2
 
     def batch_set(self, ind, new_priority):
         epsilon = 1e-6
@@ -167,7 +132,6 @@ class PrioritizedReplayBuffer:
 
 def PER(replay_buffer: PrioritizedReplayBuffer, agent, batch_size, discount, alpha=1):
     states, actions, next_states, rewards, not_dones, indices, weights = replay_buffer.sample(batch_size)
-    #td_errors = rewards + discount * not_dones * agent.critic_target.Q1(next_states, torch.FloatTensor(agent.select_action(next_states)).to(agent.device).reshape(next_states.shape[0], -1)) - agent.critic_target.Q1(states, actions)
     td_errors = compute_td_error(agent, states, actions, next_states, rewards, not_dones, discount)
     replay_buffer.update_priority(indices, np.power(np.abs(td_errors.detach().cpu().numpy()), alpha).T[0])
     return states, actions, next_states, rewards, not_dones, weights, indices
@@ -175,42 +139,17 @@ def PER(replay_buffer: PrioritizedReplayBuffer, agent, batch_size, discount, alp
 def APSER(replay_buffer: PrioritizedReplayBuffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation: int, bootstrap_steps=1, env=None, update_neigbors= False, uniform_sampling=False, normalize = False, sigmoid=False):
     states, actions, next_states, rewards, not_dones, indices, weights = replay_buffer.sample(batch_size)
     predicted_actions = torch.FloatTensor(agent.select_action(states)).to(agent.device).reshape(states.shape[0], -1)
-    next_actions = torch.FloatTensor(np.array([replay_buffer.action[indices[i]+1] for i in range(batch_size)])).to(agent.device)
-    #Q1_current = agent.critic.Q1(states, predicted_actions).detach()
-    #Q2_current = agent.critic.Q2(states, predicted_actions).detach() if hasattr(agent.critic, 'Q2') else Q1_current
     Q1_current, Q2_current = agent.critic(states, predicted_actions)
     Q1_current, Q2_current = Q1_current.detach(), Q2_current.detach()
     current_scores = torch.min(Q1_current, Q2_current)
-    # Q1_buffer = agent.critic.Q1(states, actions).detach()
-    # Q2_buffer = agent.critic.Q2(states, actions).detach() if hasattr(agent.critic, 'Q2') else Q1_buffer
     Q1_buffer, Q2_buffer = agent.critic(states, actions)
     Q1_buffer, Q2_buffer = Q1_buffer.detach(), Q2_buffer.detach() 
     buffer_scores = torch.min(Q1_buffer, Q2_buffer)
-    #improvements = torch.abs(current_scores - buffer_scores) + 1e-6
     improvements=buffer_scores-current_scores
-
-    # previous_scores_with_current_critic = rewards + discount * not_dones * agent.critic.Q1(next_states, next_actions).detach()
-    # current_scores_with_current_critic = agent.critic.Q1(states, predicted_actions).detach()
-    # # Calculate improvement and priority for batch
-    # improvements = (current_scores_with_current_critic - previous_scores_with_current_critic)
     if normalize: 
         improvements = (improvements - improvements.mean()) / (improvements.std() + 1e-5)
-
-    # if sigmoid:
-    #     priorities = torch.sigmoid(improvements).T.detach().cpu().numpy()[0]
-    # else:
-    #     priorities = improvements.T.detach().cpu().numpy()[0]
-    # Update priorities in replay buffer in batch
-
     epsilon = 1e-6
     priorities = improvements.T.detach().cpu().numpy()[0] + abs(improvements.min().item()) + epsilon
-    
-    #priorities = improvements.abs().T.detach().cpu().numpy()[0] + 1e-6
-    # Calculate inverted priority
-
-    # # Optional: Add maximum priority clipping
-    # max_priority = 100.0  # Adjust this value based on your needs
-    # priorities = np.clip(priorities, 0, max_priority)
     replay_buffer.update_priority(indices, priorities)
     if update_neigbors:
         root = 1
@@ -243,10 +182,32 @@ def APSER(replay_buffer: PrioritizedReplayBuffer, agent, batch_size, beta, disco
                 replay_buffer.update_priority(all_neighbors, updated_priorities)
     return states, actions, next_states, rewards, not_dones, weights, indices
 
-def separate_APSER(critic_replay_buffer: PrioritizedReplayBuffer, actor_replay_buffer:PrioritizedReplayBuffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation, update_neigbors):
-    actor_states, actor_actions, actor_next_states, actor_rewards, actor_not_dones, actor_weights, actor_indices = APSER(actor_replay_buffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation, update_neigbors = update_neigbors)
-    critic_states, critic_actions, critic_next_states, critic_rewards, critic_not_dones, critic_weights, critic_indices = PER(critic_replay_buffer, agent, batch_size, discount, alpha=1)
+def separate_APSER(critic_replay_buffer: PrioritizedReplayBuffer, actor_replay_buffer:PrioritizedReplayBuffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation, update_neigbors, same_batch=False, zeta = 0.5):
+    if same_batch:
+        actor_batch_size = int(batch_size*zeta)
+        critic_batch_size = int(batch_size-actor_batch_size )
+    else:
+        actor_batch_size = int(batch_size)
+        critic_batch_size = int(batch_size)
+    actor_states, actor_actions, actor_next_states, actor_rewards, actor_not_dones, actor_weights, actor_indices = APSER(actor_replay_buffer, agent, actor_batch_size, beta, discount, ro, max_steps_before_truncation, update_neigbors = update_neigbors)
+    critic_states, critic_actions, critic_next_states, critic_rewards, critic_not_dones, critic_weights, critic_indices = PER(critic_replay_buffer, agent, critic_batch_size, discount, alpha=1)
+    if same_batch:
+        actor_states=torch.cat([actor_states, critic_states], dim=0) ### if same batch, actor&critic see same samples, concatenate samples
+        actor_actions=torch.cat([actor_actions, critic_actions], dim=0) 
+        actor_next_states=torch.cat([actor_next_states, critic_next_states], dim=0) 
+        actor_rewards=torch.cat([actor_rewards, critic_rewards], dim=0) 
+        actor_not_dones=torch.cat([actor_not_dones, critic_not_dones], dim=0) 
+        actor_weights=torch.cat([actor_weights, critic_weights], dim=0) 
+        actor_indices=np.concatenate([actor_indices, critic_indices], axis=0) 
+        critic_states = actor_states
+        critic_actions = actor_actions 
+        critic_next_states = actor_next_states
+        critic_rewards = actor_rewards
+        critic_not_dones = actor_not_dones
+        critic_weights = actor_weights
+        critic_indices = actor_indices
     return actor_states, actor_actions, actor_next_states, actor_rewards, actor_not_dones, actor_weights, actor_indices, critic_states, critic_actions, critic_next_states, critic_rewards, critic_not_dones, critic_weights, critic_indices
+
 
 
 class ExperienceReplayBuffer(object):

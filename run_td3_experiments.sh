@@ -35,13 +35,18 @@ run_experiment() {
     local use_per=$3
     local seed=$4
     local separate_apser=$5
+    local same_batch=$6
     echo "Running experiment with:"
     echo "Environment: $env"
     echo "APSER: $use_apser"
     
     if [ "$use_apser" = true ]; then
         if [ "$separate_apser" = true ]; then
-            cmd="$BASE_CMD --use_separate --env_name $env --use_apser --seed $seed"
+            if [ "$same_batch" = true ]; then
+                cmd="$BASE_CMD --use_separate --same_batch --env_name $env --use_apser --seed $seed"
+            else
+                cmd="$BASE_CMD --use_separate --env_name $env --use_apser --seed $seed"
+            fi
         else
             cmd="$BASE_CMD --env_name $env --use_apser --seed $seed"
         fi
@@ -55,11 +60,7 @@ run_experiment() {
     
     echo "Command: $cmd"
     eval $cmd
-    
-    # Plot results using Python script
-    #python plot_results.py $env $use_apser $use_per $AGENT_NAME $MAX_STEPS $seed
 
-    # Wait a bit between experiments
     sleep 5
 }
 
@@ -69,7 +70,7 @@ echo "Starting TD3 experiments..."
 for env in "${ENVIRONMENTS[@]}"; do
     for seed in "${SEEDS[@]}"; do
         mkdir -p results
-        run_experiment "$env" true false "$seed" true
+        run_experiment "$env" true false "$seed" true true
         mv results "per_alpha_1_critic_actor_apser_corrected_no_neighbors_${AGENT_NAME}_${env}_results_${seed}"
     done
 done
