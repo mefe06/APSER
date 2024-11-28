@@ -182,7 +182,7 @@ def APSER(replay_buffer: PrioritizedReplayBuffer, agent, batch_size, beta, disco
                 replay_buffer.update_priority(all_neighbors, updated_priorities)
     return states, actions, next_states, rewards, not_dones, weights, indices
 
-def separate_APSER(critic_replay_buffer: PrioritizedReplayBuffer, actor_replay_buffer:PrioritizedReplayBuffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation, update_neigbors, same_batch=False, zeta = 0.5):
+def separate_APSER(critic_replay_buffer: PrioritizedReplayBuffer, actor_replay_buffer:PrioritizedReplayBuffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation, update_neigbors, same_batch=False, zeta = 0.5, alpha = 1.0):
     if same_batch:
         actor_batch_size = int(batch_size*zeta)
         critic_batch_size = int(batch_size-actor_batch_size )
@@ -190,7 +190,7 @@ def separate_APSER(critic_replay_buffer: PrioritizedReplayBuffer, actor_replay_b
         actor_batch_size = int(batch_size)
         critic_batch_size = int(batch_size)
     actor_states, actor_actions, actor_next_states, actor_rewards, actor_not_dones, actor_weights, actor_indices = APSER(actor_replay_buffer, agent, actor_batch_size, beta, discount, ro, max_steps_before_truncation, update_neigbors = update_neigbors)
-    critic_states, critic_actions, critic_next_states, critic_rewards, critic_not_dones, critic_weights, critic_indices = PER(critic_replay_buffer, agent, critic_batch_size, discount, alpha=1)
+    critic_states, critic_actions, critic_next_states, critic_rewards, critic_not_dones, critic_weights, critic_indices = PER(critic_replay_buffer, agent, critic_batch_size, discount, alpha=alpha)
     if same_batch:
         actor_states=torch.cat([actor_states, critic_states], dim=0) ### if same batch, actor&critic see same samples, concatenate samples
         actor_actions=torch.cat([actor_actions, critic_actions], dim=0) 

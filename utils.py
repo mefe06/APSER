@@ -2,6 +2,7 @@ import gymnasium as gym
 import numpy as np
 import os 
 import glob
+import torch
 
 def cleanup_previous_saves(dir, file_name, current_step):
     # Find all files matching the pattern except the current save
@@ -11,13 +12,11 @@ def cleanup_previous_saves(dir, file_name, current_step):
             continue  # Skip the latest save
         os.remove(file_path) 
 
-def evaluate_policy(agent, env_name, eval_episodes=10, show_evals = False):
+def evaluate_policy(agent, env_name, eval_episodes=20, show_evals = False, seed = 0):
     eval_env = gym.make(env_name)
-    #eval_env.seed(seed + 100)
-
     avg_reward = 0.
     for _ in range(eval_episodes):
-        state, _ = eval_env.reset()
+        state, _ = eval_env.reset(seed=seed)
         done = False
 
         while not done:

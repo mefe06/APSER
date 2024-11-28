@@ -4,23 +4,45 @@ import argparse
 import os 
 import sys
 
-def plot_averages(path: str, envs: list[str], agent_name: str ,seeds: list[int], steps: int):
+def plot_averages(path: str, result_name, envs: list[str], agent_name: str ,seeds: list[int], steps: int, window_size = 14):
     for env in envs:
         sum = None
         for seed in seeds:                
-            file_path = f"{path}/uniform_critic_actor_apser_{agent_name}_{env}_results_{seed}/separate_APSER_{agent_name}_{env}_{seed}_{steps-1}.npy"
+            file_path = f"{path}/{result_name}_{agent_name}_{env}_results_{seed}/same_batchseparate_APSER_{agent_name}_{env}_{seed}_{steps-1}.npy"
+            # same_batchseparate_APSER_
             if sum is None:
                 sum =  np.load(file_path)
             else:
                 sum += np.load(file_path)
         mean = sum/len(seeds)
-        plt.plot([i for i in range(len(mean))], mean)
-    env_names = [env.split("-")[0] for env in envs]
-    plt.legend(env_names)
-    plt.title(f"{agent_name} per for {steps} steps")
-    joint_env_names = "_".join(env_names)
-    plt.savefig(f"uniform_critic_apser_actor_{agent_name}_per_{steps//1000}k_{joint_env_names}")
-    print("plot succesfully saved!")
+        # Apply a sliding window average
+        window = np.ones(window_size) / window_size
+        smoothed_mean = np.convolve(mean, window, mode='valid')
+
+        # Plot the smoothed result
+        plt.figure()
+        plt.plot([i for i in range(len(smoothed_mean))], smoothed_mean, label=env.split("-")[0])
+        plt.legend()
+        plt.title(f"{agent_name} performance for {env} at {steps} steps")
+        plt.xlabel('Steps')
+        plt.ylabel('Performance')
+        
+        # Save the plot for the current environment
+        env_name_clean = env.split("-")[0]
+        plt.savefig(f"{result_name}_{agent_name}_{env_name_clean}_per_{steps//1000}k.png")
+        print(f"Plot successfully saved for {env}!")
+        plt.close()
+
+    #     # Plot the smoothed result
+    #     plt.plot([i for i in range(len(smoothed_mean))], smoothed_mean, label=env.split("-")[0])
+
+    #     plt.plot([i for i in range(len(mean))], mean)
+    # env_names = [env.split("-")[0] for env in envs]
+    # plt.legend(env_names)
+    # plt.title(f"{agent_name} per for {steps} steps")
+    # joint_env_names = "_".join(env_names)
+    # plt.savefig(f"{result_name}_{agent_name}_per_{steps//1000}k_{joint_env_names}")
+    # print("plot succesfully saved!")
 
 def plot_indices_histogram(path: str, results_name, envs: list[str], agent_name: str, seeds: list[int], steps: int):
     for env in envs:
@@ -82,7 +104,7 @@ def plot_sampling_frequency(path: str, result_name, envs: list[str], agent_name:
         
         for seed in seeds:
             # Load sampled indices data for each seed
-            file_path = f"{path}/{result_name}_{agent_name}_{env}_results_{seed}/APSER_{agent_name}_{env}_{seed}_sampled_indices_{steps-1}.npy"
+            file_path = f"{path}/{result_name}_{agent_name}_{env}_results_{seed}/same_batchseparate_APSER_{agent_name}_{env}_{seed}_sampled_indices_{steps-1}.npy"
             indices = np.load(file_path)
             
             # Split indices into actor and critic parts
@@ -141,4 +163,5 @@ if __name__ == "__main__":
     
     # Parse arguments
     args = parser.parse_args()
-    plot_sampling_frequency(args.path, args.result_name, args.envs, args.agent_name, args.seeds, args.steps)
+    plot_averages(args.path, args.result_name, args.envs, args.agent_name, args.seeds, args.steps)
+    #plot_sampling_frequency(args.path, args.result_name, args.envs, args.agent_name, args.seeds, args.steps)

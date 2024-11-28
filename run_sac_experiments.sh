@@ -6,23 +6,27 @@ CONDA_ENV="RL_env"
 source ~/anaconda3/etc/profile.d/conda.sh
 conda activate $CONDA_ENV
 # Global parameters
-MAX_STEPS=250000
-BUFFER_SIZE=250000
+MAX_STEPS=1000000
+BUFFER_SIZE=1000000
 BATCH_SIZE=256
-EVAL_FREQ=2500
+EVAL_FREQ=5000
 AGENT_NAME="SAC"
 learning_starts=25000
 non_linearity="relu"
-zeta_initial=0.5
+zeta_initial=0.50
 zeta_final=0.75
 # Environments to test
 ENVIRONMENTS=(
-    "Hopper-v5"
-    #"Walker2d-v5"
-    "Ant-v5"
-    #"HalfCheetah-v5"
+    # "Hopper-v5"
+    # "Walker2d-v5"
+    # "Ant-v5"
+    # "LunarLanderContinuous-v3"
+    # "HalfCheetah-v5"
+    # "Humanoid-v5"
+    # "Swimmer-v5"
+    "BipedalWalker-v3"
 )
-SEEDS=(0 1 2)
+SEEDS=(0 1 2 3 4)
 
 # Base command
 BASE_CMD="python main_APSER_SAC.py --zeta_initial $zeta_initial --zeta_final $zeta_final --no_update_neighbors --max_steps $MAX_STEPS --buffer_size $BUFFER_SIZE --batch_size $BATCH_SIZE --eval_freq $EVAL_FREQ --learning_starts $learning_starts"
@@ -71,7 +75,7 @@ for env in "${ENVIRONMENTS[@]}"; do
     for seed in "${SEEDS[@]}"; do
         mkdir -p results
         run_experiment "$env" true false "$seed" true true
-        mv results "per_alpha_1_critic_actor_apser_same_batch_zeta_annealed_050_075_corrected_no_neighbors_${AGENT_NAME}_${env}_results_${seed}"
+        mv results "per_alpha_0_critic_actor_apser_same_batch_zeta_annealed_050_075_1m_steps_${AGENT_NAME}_${env}_results_${seed}"
     done
 done
 

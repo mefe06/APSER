@@ -133,15 +133,11 @@ def main():
     file_suffix = "separate_APSER" if separate_samples else ("APSER" if use_APSER else ("PER" if use_PER else "vanilla"))
     file_suffix = "same_batch" + file_suffix if separate_samples&same_batch else file_suffix
     file_name = f"{file_suffix}_{agent_name}_{env_name}_{seed}"
-    # Initialize replay buffer and other variables
-    if not(use_APSER or use_PER):
-        replay_buffer = ExperienceReplayBuffer(state_dim, action_dim, buffer_size, device)
+    if separate_samples:
+        actor_replay_buffer = PrioritizedReplayBuffer(state_dim, action_dim, buffer_size, device)
+        critic_replay_buffer = PrioritizedReplayBuffer(state_dim, action_dim, buffer_size, device)
     else:
-        if separate_samples:
-            actor_replay_buffer = PrioritizedReplayBuffer(state_dim, action_dim, buffer_size, device)
-            critic_replay_buffer = PrioritizedReplayBuffer(state_dim, action_dim, buffer_size, device)
-        else:
-            replay_buffer = PrioritizedReplayBuffer(state_dim, action_dim, buffer_size, device)
+        replay_buffer = PrioritizedReplayBuffer(state_dim, action_dim, buffer_size, device)
     evaluations = []
     agent = SAC(**kwargs)
     done = True
@@ -151,7 +147,7 @@ def main():
     for t in range(1, max_steps):
         zeta = zeta_initial + (zeta_final - zeta_initial) * t / max_steps ## anneal zeta, as it should be low and increase as critic gets better
         if done:
-            state, _ = env.reset()
+            state, _ = env.reset(seed=seed)
         if t < start_time_steps:
             action = env.action_space.sample()
         else:
@@ -170,7 +166,7 @@ def main():
             # Sample from replay buffer
             if use_APSER:
                 if separate_samples:
-                    actor_states, _, _, _, _, _, actor_indices, critic_states, critic_actions, critic_next_states, critic_rewards, critic_not_dones, critic_weights, critic_indices = separate_APSER(critic_replay_buffer, actor_replay_buffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation, update_neigbors, same_batch, zeta)
+                    actor_states, _, _, _, _, _, actor_indices, critic_states, critic_actions, critic_next_states, critic_rewards, critic_not_dones, critic_weights, critic_indices = separate_APSER(critic_replay_buffer, actor_replay_buffer, agent, batch_size, beta, discount, ro, max_steps_before_truncation, update_neigbors, same_batch, zeta, alpha =0)
                     sampled_indices.append(list(np.concatenate([actor_indices, critic_indices])))
                     weights = critic_weights
                 else:
@@ -183,7 +179,9 @@ def main():
                     sampled_indices.append(list(indices))
                     weights = torch.as_tensor(weights, dtype=torch.float32).to(agent.device) 
                 else:
-                    states, actions, next_states, rewards, not_dones = replay_buffer.sample(batch_size)
+                    states, actions, next_states, rewards, not_dones, weights, indices = PER(replay_buffer, agent, batch_size, discount, alpha=0)
+                    sampled_indices.append(list(indices))
+                    weights = torch.as_tensor(weights, dtype=torch.float32).to(agent.device) 
             if not(use_APSER&separate_samples):
                 actor_states = critic_states = states
                 _ = critic_actions = actions
@@ -250,15 +248,16 @@ def main():
                 soft_update(agent.critic_target, agent.critic, agent.tau)
 
             # Evaluate the agent over a number of episodes
-            if (t + 1) % eval_freq == 0:
-                evaluations.append(evaluate_policy(agent, env_name))
-                save_with_unique_filename(evaluations, f"results/{file_name}_{t}")
-                save_with_unique_filename( np.array(sampled_indices), f"results/{file_name}_sampled_indices_{t}")
-                save_with_unique_filename(actor_losses, f"results/{file_name}_actor_losses_{t}")
-                save_with_unique_filename(critic_losses, f"results/{file_name}_critic_losses_{t}")
-                if (t + eval_freq) >= max_steps:
+            if (t + 1) % (eval_freq) == 0:
+                evaluations.append(evaluate_policy(agent = agent, env_name = env_name, seed = seed+50))
+                if (t + 1) % (10*eval_freq) == 0:
+                    save_with_unique_filename(evaluations, f"results/{file_name}_{t}")
+                    save_with_unique_filename(actor_losses, f"results/{file_name}_actor_losses_{t}")
+                    save_with_unique_filename(critic_losses, f"results/{file_name}_critic_losses_{t}")
+                if (t + eval_freq) > max_steps:
                     cleanup_previous_saves( "results", file_name, t)
-            if (t + 1) % (eval_freq*5) == 0: 
+                    save_with_unique_filename( np.array(sampled_indices), f"results/{file_name}_sampled_indices_{t}")
+            if (t + 1) % (eval_freq*10) == 0: 
                 if separate_samples:
                     with open(f"results/actor_sum_tree_debug_{t}.pkl", "wb") as f:
                         pickle.dump(actor_replay_buffer.tree, f)

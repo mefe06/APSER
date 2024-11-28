@@ -113,7 +113,8 @@ class GaussianPolicy(nn.Module):
         log_prob = normal.log_prob(x_t)
 
         # Enforcing action bound
-        log_prob -= torch.log(self.action_scale * (1 - y_t.pow(2)) + epsilon)
+        log_prob -= torch.log(1 - y_t.pow(2) + epsilon)
+        #log_prob -= torch.log(self.action_scale * (1 - y_t.pow(2)) + epsilon)
         log_prob = log_prob.sum(1, keepdim=True)
 
         mean = torch.tanh(mean) * self.action_scale + self.action_bias
@@ -213,7 +214,10 @@ class SAC(object):
         if evaluate is False:
             action, _, _ = self.actor.sample(state)
         else:
-            _, _, action = self.actor.sample(state)
+            with torch.no_grad():
+                mean, _ = self.actor.forward(state)
+                action = torch.tanh(mean) * self.actor.action_scale + self.actor.action_bias            
+            #_, _, action = self.actor.sample(state)
 
         return action.detach().cpu().numpy()[0]
 
